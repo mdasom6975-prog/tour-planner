@@ -21,11 +21,18 @@ TOURAPI_BASE = os.getenv("TOURAPI_BASE") or "https://apis.data.go.kr/B551011/Kor
 # 교안: 4일차 PRD 의 "도시 → 통화 표(코드)" — LLM 이 추측하지 않게 값을 표로 고정하는 방식.
 # 값은 2026-11-11 실제 응답에서 읽었다. 예전 areaCode(6/32/39)는 일부 장소에만 붙어 있어 쓰지 않는다
 # (부산: areaCode 219건, 법정동 코드 2,226건).
+#   codes        : TourAPI 조회 조건
+#   addr_keyword : 받은 장소의 주소에 들어 있어야 하는 글자 (코드가 바뀌었는지 감지하는 데 쓴다)
+#   verified     : 코드를 실제 응답으로 확인한 날 (화면 출처 표시에 쓴다)
 REGIONS = {
-    "부산": {"lDongRegnCd": "26"},                          # 측정 2,226건
-    "강릉": {"lDongRegnCd": "51", "lDongSignguCd": "150"},  # 측정 993건
-    "제주": {"lDongRegnCd": "50"},                          # 측정 2,116건
+    "부산": {"codes": {"lDongRegnCd": "26"}, "addr_keyword": "부산", "verified": "2026-11-11"},  # 측정 2,226건
+    "강릉": {"codes": {"lDongRegnCd": "51", "lDongSignguCd": "150"}, "addr_keyword": "강릉", "verified": "2026-11-11"},  # 측정 993건
+    "제주": {"codes": {"lDongRegnCd": "50"}, "addr_keyword": "제주", "verified": "2026-11-11"},  # 측정 2,116건
 }
+# 목록 한 번 호출에 요청하는 건수. 1000 을 요청해 993건(강릉 전체)을 한 번에 받는 것까지 측정했다.
+LIST_PAGE_SIZE = 1000
+# 주소가 있는 장소 중 addr_keyword 를 포함해야 하는 최소 비율. 이보다 낮으면 지역 코드가 바뀐 것으로 본다.
+REGION_ADDR_MATCH_MIN = 0.9
 # 하루 호출 한도. 오퍼레이션별인지 전체 합산인지 확인 전이라 더 안전한 "전체 합산"으로 센다.
 TOURAPI_DAILY_LIMIT = 1000
 TOURAPI_SAFETY_MARGIN = 50  # 한도 직전에 멈추기 위한 여유분 (점검·재시도용으로 남겨 둔다)
