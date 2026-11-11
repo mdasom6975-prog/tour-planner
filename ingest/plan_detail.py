@@ -12,6 +12,7 @@ import config
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
 QUEUE_PATH = RAW_DIR / "detail_queue.jsonl"
+ACTIVE_PATH = RAW_DIR / "festivals_active.jsonl"
 
 
 def build_queue() -> dict:
@@ -41,7 +42,19 @@ def build_queue() -> dict:
     df["turn"] = df.groupby(["region", "contenttypeid"]).cumcount()
     df["region_order"] = df["region"].map({name: i for i, name in enumerate(config.REGIONS)})
     df["type_order"] = df["contenttypeid"].map({t: i for i, t in enumerate(config.DETAIL_TYPES)})
-    df = df.sort_values(["turn", "region_order", "type_order"]).reset_index(drop=True)
+
+    # 왜: 축제는 대부분 이미 끝난 행사라, 진행 중 · 예정인 것부터 받아야 코스에 넣을 재료가 생긴다. 어디: 대기열 맨 앞.
+    # 교안: 2일차 Part3 "측정하고 나서 결정" — 113곳 중 쓸 수 있는 축제가 9곳뿐이라는 측정에서 나온 규칙이다.
+    # 축제 목록 파일이 없으면 이 규칙을 건너뛴다 (ingest.collect_festivals 를 돌리지 않아도 대기열은 만들어진다).
+    active = {}
+    if ACTIVE_PATH.exists():
+        with ACTIVE_PATH.open(encoding="utf-8") as f:
+            active = {r["contentid"]: r["event_start"] for r in map(json.loads, f)}
+    df["active"] = df["contentid"].isin(active)
+    df["active_start"] = df["contentid"].map(active).fillna("")
+    df["priority"] = (~df["active"]).astype(int)
+
+    df = df.sort_values(["priority", "active_start", "turn", "region_order", "type_order"]).reset_index(drop=True)
 
     # 왜: 한 줄에 장소 한 곳이면 "어디까지 받았는지" 를 줄 번호로 이어 갈 수 있다. 어디: 1-5b 가 읽는 파일.
     # 교안: RAG 실습1 Q1 — 한 줄에 한 건인 jsonl 저장.
@@ -54,6 +67,7 @@ def build_queue() -> dict:
                 "region": row.region,
                 "title": row.title,
                 "has_image": bool(row.has_image),
+                "active_festival": bool(row.active),
                 "modifiedtime": row.modifiedtime,
             }, ensure_ascii=False) + "\n")
 
