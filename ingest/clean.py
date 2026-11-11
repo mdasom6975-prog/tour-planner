@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import config
+from ingest.rest_days import parse_rest
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = ROOT / "data" / "raw"
@@ -154,6 +155,12 @@ def build_places() -> dict:
                 "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
             })
             places[-1]["search_text"] = build_search_text(places[-1])
+            # 왜: 검증기가 "이 요일에 가도 되는가" 를 코드로 판정하려면 문장이 아닌 값이 필요하다. 어디: 6단계 검증기의 입력.
+            # 교안: "숫자와 사실 판정은 코드가". 축제는 휴무일 대신 행사 기간으로 검증하므로 해당 없음으로 둔다.
+            if fmap["rest"]:
+                places[-1].update(parse_rest(places[-1]["rest_text"]))
+            else:
+                places[-1].update({"rest_status": "not_applicable", "rest_weekdays": [], "rest_note": False})
             by_type[config.DETAIL_TYPES[type_id]] = by_type.get(config.DETAIL_TYPES[type_id], 0) + 1
 
     # 왜: 원본에서 계산해 통째로 다시 쓰면 몇 번 실행해도 결과가 같다. 어디: 저장.
