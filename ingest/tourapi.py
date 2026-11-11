@@ -56,7 +56,8 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
     used = usage["counts"].get(operation, 0)
     budget = config.TOURAPI_DAILY_LIMIT - config.TOURAPI_SAFETY_MARGIN
     if used >= budget:
-        return {"ok": False, "reason": f"오늘 {operation} 호출 한도 도달 ({used}/{budget}). 내일 이어서 받습니다"}
+        # "limit": True 는 부르는 쪽이 "실패" 와 "오늘 분량 끝" 을 글자가 아닌 값으로 구분하게 해 준다.
+        return {"ok": False, "limit": True, "reason": f"오늘 {operation} 호출 한도 도달 ({used}/{budget}). 내일 이어서 받습니다"}
 
     # 왜: 매번 똑같이 붙는 값은 함수가 붙여야 호출하는 쪽이 조건만 신경 쓴다. 어디: 모든 오퍼레이션.
     # 교안: 3일차 day3_tools.get_weather — requests.get(url, params={...}) 로 조건을 넘기던 형태.
