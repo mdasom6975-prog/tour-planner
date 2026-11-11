@@ -18,9 +18,12 @@ QUEUE_PATH = RAW_DIR / "detail_queue.jsonl"
 
 # 왜: 한도가 오퍼레이션별이라 진도가 서로 달라질 수 있어 파일을 따로 둔다. 어디: 저장 위치 결정.
 # 교안: 3일차 Part2 도구 설계 "한 가지 일만" — 소개글 수집과 휴무일 수집을 서로 묶지 않는다.
-OUTPUT = {
-    "detailCommon2": "detail_common.jsonl",
-    "detailIntro2": "detail_intro.jsonl",
+# 무장애 정보(detailWithTour2)는 서비스 · 대기열 · 저장 파일이 다르지만 "순서대로 받아 덧붙이고 이어받는" 동작은 같다.
+# 같은 동작을 두 벌 두면 한쪽만 고쳐지므로, 다른 점만 표로 두고 함수는 하나로 쓴다. (A-3)
+OPERATIONS = {
+    "detailCommon2":   {"file": "detail_common.jsonl", "queue": "detail_queue.jsonl", "service": None, "send_type": False, "plan": "ingest.plan_detail"},
+    "detailIntro2":    {"file": "detail_intro.jsonl",  "queue": "detail_queue.jsonl", "service": None, "send_type": True,  "plan": "ingest.plan_detail"},
+    "detailWithTour2": {"file": "access.jsonl",        "queue": "access_queue.jsonl", "service": "KorWithService2", "send_type": False, "plan": "ingest.plan_access"},
 }
 
 
@@ -37,14 +40,16 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
     """결과: {"ok", "fetched", "skipped", "empty", "failed", "stopped", "avg_sec", "remaining"}"""
     # 왜: 모르는 오퍼레이션으로 한도를 쓰지 않게 먼저 거른다. 어디: 함수 맨 앞의 입력 검사.
     # 교안: 3일차 Part2 "에러도 결과로" — 잘못된 입력도 예외 대신 사유를 돌려준다.
-    if operation not in OUTPUT:
-        return {"ok": False, "reason": f"지원하지 않는 오퍼레이션: {operation}. 가능: {list(OUTPUT)}"}
-    if not QUEUE_PATH.exists():
-        return {"ok": False, "reason": "대기열이 없습니다. 먼저 ingest.plan_detail 을 실행하세요"}
+    if operation not in OPERATIONS:
+        return {"ok": False, "reason": f"지원하지 않는 오퍼레이션: {operation}. 가능: {list(OPERATIONS)}"}
+    spec = OPERATIONS[operation]
+    queue_path = RAW_DIR / spec["queue"]
+    if not queue_path.exists():
+        return {"ok": False, "reason": f"대기열({spec['queue']})이 없습니다. 먼저 {spec['plan']} 을 실행하세요"}
 
-    out_path = RAW_DIR / OUTPUT[operation]
+    out_path = RAW_DIR / spec["file"]
     done = _done_ids(out_path)
-    with QUEUE_PATH.open(encoding="utf-8") as f:
+    with queue_path.open(encoding="utf-8") as f:
         queue = [json.loads(line) for line in f if line.strip()]
 
     collected = today or date.today().isoformat()
@@ -69,11 +74,11 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
             # 왜: 휴무일 조회는 유형을 함께 보내야 그 유형의 항목이 온다 (1-4b 에서 그렇게 불러 확인). 어디: 조회 조건.
             # 교안: 3일차 Part2 "도구 입력은 필요한 것만 명확하게".
             params = {"contentId": place["contentid"]}
-            if operation == "detailIntro2":
+            if spec["send_type"]:
                 params["contentTypeId"] = place["contenttypeid"]
 
             started = time.perf_counter()
-            r = call(operation, params, today=today)
+            r = call(operation, params, today=today, service=spec["service"])
             elapsed += time.perf_counter() - started
 
             # 왜: 한도 도달은 실패가 아니라 "오늘 분량 끝" 이므로 따로 다룬다. 어디: 호출 결과 분기.
