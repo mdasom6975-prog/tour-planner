@@ -1,6 +1,6 @@
 """목록 · 소개글 · 휴무일 세 파일을 장소 한 곳당 한 줄로 합친다. API 를 호출하지 않는다. (PRD 14번 1단계 중 1-6a)
 
-검색용 본문 만들기(1-6b) · 휴무일 해석(1-6c)은 여기 없다.
+검색기가 읽을 글(search_text)도 여기서 만든다 (1-6b). 휴무일 해석(1-6c)은 여기 없다.
 실행:  python -m ingest.clean
 """
 import html
@@ -62,6 +62,43 @@ def _coord(item: dict):
     return lat, lon
 
 
+def _area(addr: str) -> str:
+    # 왜: "해운대", "애월" 같은 동네 이름으로 찾을 수 있게 하되 번지 · 도로명 숫자는 잡음이라 뺀다. 어디: 본문 첫 줄.
+    # 교안: RAG 실습1 Q3 — BM25 는 글자 일치로 찾으므로 본문에 어떤 낱말을 넣을지가 검색 결과를 정한다.
+    tokens = addr.split()
+    parts = tokens[:2] + [t for t in tokens[2:4] if re.fullmatch(r"[가-힣]+(읍|면|동|리|가)", t)]
+    in_paren = re.search(r"\(([^)]+)\)", addr)
+    if in_paren and in_paren.group(1) not in parts:
+        parts.append(in_paren.group(1))
+    return " ".join(parts)
+
+
+def build_search_text(place: dict) -> str:
+    """검색기(BM25 · 임베딩)가 읽을 글 한 덩어리를 만든다. 장소 한 곳이 문서 한 건이다."""
+    # 왜: 소개글이 최대 914자(중앙 340자)라 나눌 만큼 길지 않다. 나누지 않으면 검색 결과 한 건이 곧 장소 한 곳이다.
+    # 교안: 3일차 03 가이드북은 긴 문서를 나눴다(청킹). 여기서는 길이를 재 보고 나누지 않기로 했다.
+    extra = place["extra"]
+    lines = [f"[{place['type']}] {place['title']} ({_area(place['addr'])})"]
+
+    # 왜: "칼국수", "무료", "체험" 같은 조건에 반응하려면 유형별 단서가 본문에 있어야 한다. 어디: 둘째 줄.
+    # 교안: RAG 실습1 Q8 실패 사례 분석 — 찾지 못한 이유가 "본문에 그 낱말이 없어서" 인 경우를 줄인다.
+    labels = {
+        "음식점": [("대표 메뉴", "menu_main"), ("메뉴", "menu")],
+        "축제·행사": [("행사 장소", "event_place"), ("프로그램", "program")],
+        "문화시설": [("이용요금", "fee")],
+        "관광지": [("체험", "experience")],
+    }
+    hints = [f"{label}: {extra[key]}" for label, key in labels.get(place["type"], []) if extra.get(key)]
+    if hints:
+        lines.append(". ".join(h.replace("\n", " ") for h in hints))
+
+    # 왜: 휴무일 · 이용시간 · 행사 기간 · 전화 · 홈페이지는 일부러 넣지 않는다. 날짜와 휴무는 검색이 아니라 코드가 거른다.
+    # 교안: "숫자와 사실 판정은 코드가" — 본문에 넣으면 "화요일" 검색에 화요일 휴무인 곳이 걸린다.
+    if place["overview"]:
+        lines.append(place["overview"].replace("\n", " "))
+    return "\n".join(lines)
+
+
 def _load(name: str) -> dict:
     with (RAW_DIR / name).open(encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
@@ -116,6 +153,7 @@ def build_places() -> dict:
                 "parking": _text(i.get(fmap["parking"])) if fmap["parking"] else "",
                 "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
             })
+            places[-1]["search_text"] = build_search_text(places[-1])
             by_type[config.DETAIL_TYPES[type_id]] = by_type.get(config.DETAIL_TYPES[type_id], 0) + 1
 
     # 왜: 원본에서 계산해 통째로 다시 쓰면 몇 번 실행해도 결과가 같다. 어디: 저장.
