@@ -51,11 +51,12 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
 
     # 왜: 한도를 넘기면 그날 수집이 전부 막히므로 보내기 전에 코드가 막는다. 어디: 요청 직전.
     # 교안: 3일차 Part4 "안전장치는 프롬프트가 아니라 코드에" / day3_tools.run_agent 의 max_rounds.
+    # 한도는 오퍼레이션마다 따로 센다 (2026-11-11 활용신청 화면에서 사용자가 확인).
     usage = _load_usage(today)
-    used = sum(usage["counts"].values())
+    used = usage["counts"].get(operation, 0)
     budget = config.TOURAPI_DAILY_LIMIT - config.TOURAPI_SAFETY_MARGIN
     if used >= budget:
-        return {"ok": False, "reason": f"오늘 호출 한도 도달 ({used}/{budget}). 내일 이어서 받습니다"}
+        return {"ok": False, "reason": f"오늘 {operation} 호출 한도 도달 ({used}/{budget}). 내일 이어서 받습니다"}
 
     # 왜: 매번 똑같이 붙는 값은 함수가 붙여야 호출하는 쪽이 조건만 신경 쓴다. 어디: 모든 오퍼레이션.
     # 교안: 3일차 day3_tools.get_weather — requests.get(url, params={...}) 로 조건을 넘기던 형태.
