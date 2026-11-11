@@ -9,7 +9,7 @@ from pathlib import Path
 from kiwipiepy import Kiwi
 from rank_bm25 import BM25Okapi
 
-import config
+from rag.filters import check_filters, is_visible
 
 PLACES_PATH = Path(__file__).resolve().parent.parent / "data" / "processed" / "places.jsonl"
 
@@ -49,17 +49,14 @@ class Bm25Index:
         with Path(path).open(encoding="utf-8") as f:
             return cls([json.loads(line) for line in f if line.strip()])
 
-    def search(self, query: str, k: int = 10, region: str | None = None, types: list | None = None) -> dict:
+    def search(self, query: str, k: int = 10, region: str | None = None, types: list | None = None,
+               today: str | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms"} / 실패: {"ok": False, "reason"}"""
         started = time.perf_counter()
 
-        # 왜: 없는 지역 · 유형으로 찾으면 "결과 없음" 과 "잘못된 조건" 을 구분할 수 없다. 어디: 입력 검사.
-        # 교안: 3일차 Part2 "에러도 결과로" / 4일차 PRD F1 "지원하지 않는 지역이면 지어내지 않고 안내".
-        if region is not None and region not in config.REGIONS:
-            return {"ok": False, "reason": f"지원하지 않는 지역: {region}. 가능: {list(config.REGIONS)}"}
-        known_types = set(config.DETAIL_TYPES.values())
-        if types and not set(types) <= known_types:
-            return {"ok": False, "reason": f"지원하지 않는 유형: {sorted(set(types) - known_types)}. 가능: {sorted(known_types)}"}
+        problem = check_filters(region, types)
+        if problem:
+            return {"ok": False, "reason": problem}
 
         q_tokens = tokenize(query)
         if not q_tokens:
@@ -67,15 +64,13 @@ class Bm25Index:
 
         scores = self.bm25.get_scores(q_tokens)
 
-        # 왜: 지역 · 유형은 점수가 아니라 조건이다. "강릉" 이 본문에 여러 번 나온 부산 식당이 올라오면 안 된다. 어디: 점수 뒤 거르기.
-        # 교안: PRD F2 "메타데이터 필터". RAG 실습1 에는 없던 부분으로, 장소 데이터라서 필요하다.
+        # 왜: 조건(지역 · 유형 · 끝난 행사 제외)은 임베딩 검색과 똑같아야 해서 rag/filters.py 한 곳에 둔다. 어디: 점수 뒤 거르기.
+        # 교안: 3일차 Part2 "도구는 한 가지 일만" — 점수 매기기와 조건 판정을 나눈다.
         ranked = []
         for i, place in enumerate(self.places):
             if scores[i] <= 0:
                 continue
-            if region is not None and place["region"] != region:
-                continue
-            if types and place["type"] not in types:
+            if not is_visible(place, region, types, today):
                 continue
             ranked.append((float(scores[i]), i))
         ranked.sort(reverse=True)
