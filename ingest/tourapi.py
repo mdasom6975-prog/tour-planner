@@ -51,13 +51,25 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
 
     # 왜: 한도를 넘기면 그날 수집이 전부 막히므로 보내기 전에 코드가 막는다. 어디: 요청 직전.
     # 교안: 3일차 Part4 "안전장치는 프롬프트가 아니라 코드에" / day3_tools.run_agent 의 max_rounds.
-    # 한도는 오퍼레이션마다 따로 센다 (2026-11-11 활용신청 화면에서 사용자가 확인).
+    # 한도는 오퍼레이션마다 따로 1,000건이다. 서버가 응답 머리말(X-RateLimit-Remaining)로 남은 수를 알려 준다
+    # (2026-11-11 세 오퍼레이션에서 서버 값과 우리 기록이 일치하는 것을 확인).
     usage = _load_usage(today)
     used = usage["counts"].get(operation, 0)
-    budget = config.TOURAPI_DAILY_LIMIT - config.TOURAPI_SAFETY_MARGIN
-    if used >= budget:
+    server_remaining = usage.get("server_remaining", {}).get(operation)
+
+    # 왜: 우리 기록은 이 함수를 거친 호출만 센다. 서버가 알려 준 값이 있으면 그것이 정답이다. 어디: 멈출지 판단.
+    # 교안: 1일차 03 "환각" 과 같은 교훈 — 기억(우리 기록)보다 근거(서버 값)를 우선한다.
+    if server_remaining is not None:
+        blocked = server_remaining <= config.TOURAPI_SAFETY_MARGIN
+        detail = f"서버가 알려 준 남은 수 {server_remaining}, 여유분 {config.TOURAPI_SAFETY_MARGIN}"
+    else:
+        # 그날 첫 호출 전이라 서버 값이 아직 없을 때만 우리 기록으로 판단한다.
+        budget = config.TOURAPI_DAILY_LIMIT - config.TOURAPI_SAFETY_MARGIN
+        blocked = used >= budget
+        detail = f"우리 기록 {used}/{budget}"
+    if blocked:
         # "limit": True 는 부르는 쪽이 "실패" 와 "오늘 분량 끝" 을 글자가 아닌 값으로 구분하게 해 준다.
-        return {"ok": False, "limit": True, "reason": f"오늘 {operation} 호출 한도 도달 ({used}/{budget}). 내일 이어서 받습니다"}
+        return {"ok": False, "limit": True, "reason": f"오늘 {operation} 호출 한도 도달 ({detail}). 내일 이어서 받습니다"}
 
     # 왜: 매번 똑같이 붙는 값은 함수가 붙여야 호출하는 쪽이 조건만 신경 쓴다. 어디: 모든 오퍼레이션.
     # 교안: 3일차 day3_tools.get_weather — requests.get(url, params={...}) 로 조건을 넘기던 형태.
@@ -80,6 +92,17 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
         r = requests.get(f"{config.TOURAPI_BASE}/{operation}", params=query, timeout=15)
     except requests.RequestException as e:
         return {"ok": False, "reason": f"연결 실패: {type(e).__name__}"}
+
+    # 왜: 서버가 센 남은 수를 받아 적어 두면 다음 호출의 판단 근거가 되고, 파일만 열어도 남은 한도를 알 수 있다. 어디: 응답 직후.
+    # 교안: 12-1 실행 기록 — 추측하지 않고 실제로 관측한 값을 남긴다. 머리말이 없으면 우리 기록 방식으로 남는다.
+    limit_h, remain_h = r.headers.get("X-RateLimit-Limit"), r.headers.get("X-RateLimit-Remaining")
+    if remain_h is not None and remain_h.isdigit():
+        usage.setdefault("server_remaining", {})[operation] = int(remain_h)
+        # 서버가 센 사용량과 우리 기록이 다르면 다른 경로의 호출이 있었다는 뜻이다. 차이를 적어 둔다.
+        if limit_h is not None and limit_h.isdigit():
+            drift = (int(limit_h) - int(remain_h)) - usage["counts"][operation]
+            usage.setdefault("drift", {})[operation] = drift
+        _save_usage(usage)
 
     # 왜: TourAPI 는 키 · 한도 · 주소 오류일 때 JSON 대신 XML 이나 일반 글자로 답한다. 어디: 응답 해석 전.
     # 교안: 2일차 Part4 다층 방어의 "출력 검증"과 같은 생각 — 받은 것을 쓰기 전에 코드로 형식 확인.
