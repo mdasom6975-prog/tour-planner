@@ -1,0 +1,14 @@
+# 0단계: 공통 · LLM · 오케스트레이션 · 화면 · 테스트 (2026-11-11 설치 버전으로 고정)
+python-dotenv==1.2.4
+requests==2.34.2
+anthropic==2.8.0
+openai==3.49.0
+langchain==1.4.10
+langchain-anthropic==1.7.10
+langchain-openai==1.7.4
+langgraph==1.2.20
+streamlit==1.67.0
+pandas==3.1.1
+pytest==9.2.0
+
+# 2단계(검색)에서 추가 설치: kiwipiepy, rank_bm25, sentence-transformers, faiss-cpu
