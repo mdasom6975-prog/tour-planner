@@ -33,7 +33,7 @@ def _save_usage(usage: dict) -> None:
     USAGE_PATH.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def call(operation: str, params: dict | None = None, today: str | None = None) -> dict:
+def call(operation: str, params: dict | None = None, today: str | None = None, service: str | None = None) -> dict:
     """TourAPI 오퍼레이션을 한 번 호출한다.
 
     성공: {"ok": True, "items": [...], "total": 전체 건수}
@@ -42,6 +42,12 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
     # 왜: 날짜를 인자로 받으면 테스트에서 "내일"을 흉내 낼 수 있다. 어디: 한도 초기화 검증.
     # 교안: 4일차 PRD "가짜 날씨 데이터를 주입" — 외부 의존을 인자로 받는 원칙.
     today = today or date.today().isoformat()
+
+    # 왜: 무장애 여행 정보는 별도 서비스(KorWithService2)다. 같은 이름의 오퍼레이션이 있고 한도도 따로라 기록을 나눈다. 어디: 주소와 기록의 이름.
+    # 교안: 3일차 Part2 "도구는 한 가지 일만" 을 지키면서 인자로 대상을 바꾼다. 기본값은 기존 서비스라 기존 호출은 그대로다.
+    root, default_service = config.TOURAPI_BASE.rsplit("/", 1)
+    service = service or default_service
+    usage_key = operation if service == default_service else f"{service}/{operation}"
 
     # 왜: 키가 없으면 호출해 봐야 실패하므로 한도를 쓰기 전에 걸러 낸다. 어디: 함수 맨 앞.
     # 교안: 2일차 Part4 "비밀은 .env 에만" — 키는 코드 · 지시문 · 로그에 쓰지 않는다.
@@ -54,8 +60,8 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
     # 한도는 오퍼레이션마다 따로 1,000건이다. 서버가 응답 머리말(X-RateLimit-Remaining)로 남은 수를 알려 준다
     # (2026-11-11 세 오퍼레이션에서 서버 값과 우리 기록이 일치하는 것을 확인).
     usage = _load_usage(today)
-    used = usage["counts"].get(operation, 0)
-    server_remaining = usage.get("server_remaining", {}).get(operation)
+    used = usage["counts"].get(usage_key, 0)
+    server_remaining = usage.get("server_remaining", {}).get(usage_key)
 
     # 왜: 우리 기록은 이 함수를 거친 호출만 센다. 서버가 알려 준 값이 있으면 그것이 정답이다. 어디: 멈출지 판단.
     # 교안: 1일차 03 "환각" 과 같은 교훈 — 기억(우리 기록)보다 근거(서버 값)를 우선한다.
@@ -69,7 +75,7 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
         detail = f"우리 기록 {used}/{budget}"
     if blocked:
         # "limit": True 는 부르는 쪽이 "실패" 와 "오늘 분량 끝" 을 글자가 아닌 값으로 구분하게 해 준다.
-        return {"ok": False, "limit": True, "reason": f"오늘 {operation} 호출 한도 도달 ({detail}). 내일 이어서 받습니다"}
+        return {"ok": False, "limit": True, "reason": f"오늘 {usage_key} 호출 한도 도달 ({detail}). 내일 이어서 받습니다"}
 
     # 왜: 매번 똑같이 붙는 값은 함수가 붙여야 호출하는 쪽이 조건만 신경 쓴다. 어디: 모든 오퍼레이션.
     # 교안: 3일차 day3_tools.get_weather — requests.get(url, params={...}) 로 조건을 넘기던 형태.
@@ -83,13 +89,13 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
 
     # 왜: 서버는 실패한 요청도 한 건으로 셀 수 있어 결과와 상관없이 먼저 센다. 어디: 요청 직전.
     # 교안: 2일차 Part3 "속도 · 비용은 넘으면 안 되는 선" — 쓴 양을 기록해야 선을 지킬 수 있다.
-    usage["counts"][operation] = usage["counts"].get(operation, 0) + 1
+    usage["counts"][usage_key] = usage["counts"].get(usage_key, 0) + 1
     _save_usage(usage)
 
     # 왜: 네트워크 오류로 수집 전체가 죽지 않게 오류를 결과로 바꾼다. 어디: 실제 HTTP 호출.
     # 교안: 3일차 Part2 도구 설계 5조건 "에러도 결과로" / get_weather 의 except → {'error': ...}.
     try:
-        r = requests.get(f"{config.TOURAPI_BASE}/{operation}", params=query, timeout=15)
+        r = requests.get(f"{root}/{service}/{operation}", params=query, timeout=15)
     except requests.RequestException as e:
         return {"ok": False, "reason": f"연결 실패: {type(e).__name__}"}
 
@@ -97,11 +103,11 @@ def call(operation: str, params: dict | None = None, today: str | None = None) -
     # 교안: 12-1 실행 기록 — 추측하지 않고 실제로 관측한 값을 남긴다. 머리말이 없으면 우리 기록 방식으로 남는다.
     limit_h, remain_h = r.headers.get("X-RateLimit-Limit"), r.headers.get("X-RateLimit-Remaining")
     if remain_h is not None and remain_h.isdigit():
-        usage.setdefault("server_remaining", {})[operation] = int(remain_h)
+        usage.setdefault("server_remaining", {})[usage_key] = int(remain_h)
         # 서버가 센 사용량과 우리 기록이 다르면 다른 경로의 호출이 있었다는 뜻이다. 차이를 적어 둔다.
         if limit_h is not None and limit_h.isdigit():
-            drift = (int(limit_h) - int(remain_h)) - usage["counts"][operation]
-            usage.setdefault("drift", {})[operation] = drift
+            drift = (int(limit_h) - int(remain_h)) - usage["counts"][usage_key]
+            usage.setdefault("drift", {})[usage_key] = drift
         _save_usage(usage)
 
     # 왜: TourAPI 는 키 · 한도 · 주소 오류일 때 JSON 대신 XML 이나 일반 글자로 답한다. 어디: 응답 해석 전.
