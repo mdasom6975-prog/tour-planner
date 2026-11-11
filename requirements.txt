@@ -11,4 +11,11 @@ streamlit==1.67.0
 pandas==3.1.1
 pytest==9.2.0
 
-# 2단계(검색)에서 추가 설치: kiwipiepy, rank_bm25, sentence-transformers, faiss-cpu
+# 2단계: 검색 (2026-11-11 설치 버전으로 고정)
+kiwipiepy==0.24.1          # 한국어 형태소 분석 (BM25 용)
+rank-bm25==0.2.2           # BM25 키워드 검색
+sentence-transformers==6.2.0  # 임베딩 · 재정렬 모델 (torch 를 함께 설치한다)
+torch==2.15.0
+numpy==2.5.4               # 벡터 검색 (전수 비교)
+# faiss-cpu 는 쓰지 않는다: 이 환경에서 torch 와 한 프로세스에 올리면 OpenMP 중복으로 멈춘다.
+# 3,104건은 numpy 전수 비교로 질의 1건 0.13ms 라 필요하지도 않다 (PRD 13번).

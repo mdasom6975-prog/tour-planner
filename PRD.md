@@ -196,7 +196,11 @@ START
 - LLM: **Claude가 기본, OpenAI는 비교용.** 모델 이름은 `config.py` 한 곳에 두고 `init_chat_model`로 만든다. `LLM_PROVIDER=claude|openai`로 바꾼다
   - 구조화 출력은 JSON 스키마 방식으로 받는다 (최신 Claude는 특정 도구 강제 호출을 받지 않는다)
   - `temperature`를 넘기지 않는다 (최신 Claude가 받지 않는다)
-- 검색: kiwipiepy + rank_bm25 · sentence-transformers(한국어 임베딩 · reranker) · FAISS
+- 검색: kiwipiepy + rank_bm25 · sentence-transformers(한국어 임베딩 · reranker) · numpy 전수 비교
+  - **FAISS는 쓰지 않는다** (2026-11-11 결정). 이 환경(macOS arm64 · Python 3.14 · torch 2.15 · faiss-cpu 1.16)에서 FAISS와 PyTorch를 한 프로세스에 올리면 OpenMP 중복 오류로 멈춘다. 각각은 동작한다
+  - 필요하지도 않다. 측정: 1,024차원 벡터를 numpy로 전부 비교하면 3,104건에서 질의 1건 0.13ms, 5만 건에서 3.01ms
+  - 벡터 검색은 함수 하나로 분리해, 수백만 건으로 커지면 그 함수만 벡터 검색 엔진으로 바꾼다
+  - 교안(RAG 실습 1 Q5)의 FAISS 인덱스 비교는 이 프로젝트에서 재현하지 않는다
 ```
 tour-planner/
 ├─ PRD.md · CLAUDE.md · .env.example · requirements.txt
