@@ -124,7 +124,8 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
         "failed": failed,
         "stopped": stopped,
         "avg_sec": round(elapsed / calls, 3) if calls else None,
-        "remaining": len(queue) - len(done) - fetched - empty,
+        # 이미 받았지만 대기열에서 빠진 곳(끝난 축제)이 있어, 대기열에 있는 것만 센다.
+        "remaining": sum(1 for p in queue if p["contentid"] not in done) - fetched - empty,
     }
 
 
