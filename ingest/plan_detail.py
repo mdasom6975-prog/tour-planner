@@ -51,6 +51,14 @@ def build_queue() -> dict:
         with ACTIVE_PATH.open(encoding="utf-8") as f:
             active = {r["contentid"]: r["event_start"] for r in map(json.loads, f)}
     df["active"] = df["contentid"].isin(active)
+
+    # 왜: 끝난 행사는 어떤 여행에도 맞을 수 없어 검색에서 빼기로 했다(2-1b). 쓰지 않을 소개글을 받느라 한도를 쓰지 않는다. 어디: 대기열.
+    # 교안: 4일차 PRD "하지 않을 것" — 필요 없는 일을 범위에서 뺀다. 측정: 네 지역 축제 300곳 중 진행 중 · 예정은 37곳.
+    # 축제 목록 파일이 없으면 어느 것이 끝났는지 모르므로 빼지 않는다.
+    if ACTIVE_PATH.exists():
+        festival_type = next(k for k, v in config.DETAIL_TYPES.items() if v == "축제·행사")
+        df = df[(df["contenttypeid"] != festival_type) | df["active"]].copy()
+
     df["active_start"] = df["contentid"].map(active).fillna("")
     df["priority"] = (~df["active"]).astype(int)
 
