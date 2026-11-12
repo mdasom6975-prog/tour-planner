@@ -1,18 +1,18 @@
-"""화면 뼈대. 지금은 "질문 → 검색 결과 카드" 와 실행 추적 한 줄만 동작한다. (PRD 14번 2-b)
+"""화면 뼈대. 지금은 "질문 → 검색 결과 카드" 와 실행 추적만 동작한다. (PRD 14번 2-b · 2-5b)
 
 이 파일은 그리는 일만 한다. 검색은 rag/, 실행 기록은 harness/ 가 한다.
 지도 · 일자별 코스 · LLM 답변 · 꾸미기는 여기 없다 (5 · 7단계).
-실행:  streamlit run app.py
+실행:  source .venv/bin/activate 뒤에 streamlit run app.py  (가상환경 밖에서 띄우면 kiwipiepy 를 못 찾는다)
 """
 import re
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import quote
 
 import streamlit as st
 
 import config
 from harness.trace import Trace
-from rag.bm25 import PLACES_PATH, Bm25Index
+from rag.retriever import PLACES_PATH, Retriever
 
 POLICY_URL = "https://api.visitkorea.or.kr/#/useServiceGuide/2"
 
@@ -43,10 +43,10 @@ UNSUPPORTED_WORDS = ["인천", "대전", "대구", "울산", "세종", "경기",
 
 
 @st.cache_resource(show_spinner="검색 색인을 만드는 중입니다…")
-def load_index(data_version: float) -> Bm25Index:
-    # 왜: Streamlit 은 버튼을 누를 때마다 파일 전체를 다시 실행한다. 색인을 매번 만들면 질문마다 3초를 기다린다. 어디: 색인 준비.
+def load_index(data_version: float) -> Retriever:
+    # 왜: Streamlit 은 버튼을 누를 때마다 파일 전체를 다시 실행한다. 색인과 모델(준비 14초)을 매번 만들 수 없어 한 번만 만든다. 어디: 색인 준비.
     # 교안: 4일차 PRD "결과 캐시". 정제 파일의 수정 시각을 인자로 받아, 데이터가 바뀌면 저절로 다시 만든다.
-    return Bm25Index.from_file()
+    return Retriever.from_file()
 
 
 def plain(text: str) -> str:
@@ -62,7 +62,7 @@ def guess_region(text: str) -> str | None:
     return None
 
 
-def answer(question: str, index: Bm25Index) -> None:
+def answer(question: str, index: Retriever, rerank: bool = True) -> None:
     """질문 하나를 처리해 대화 · 결과 · 실행 기록을 세션에 넣는다."""
     # 왜: 질문 한 건이 실행 기록 한 묶음(run)이 된다. 화면은 그 기록을 그대로 그린다. 어디: 질문 처리.
     # 교안: PRD 12-1 실행 기록. 2-a 에서 정한 형식을 처음 쓰는 곳이다.
@@ -81,7 +81,9 @@ def answer(question: str, index: Bm25Index) -> None:
         st.session_state.condition = {"지역": f"{outside} (다루지 않음)"}
         return
 
-    result = index.search(question, k=8, region=region, trace=trace)
+    # 왜: 화면은 검색 창구 하나만 부른다. 오늘 날짜를 넘겨야 끝난 행사가 빠지고, 재정렬 여부는 개발자 모드에서 고른다. 어디: 검색 호출.
+    # 교안: RAG 실습1 Q7 — 합친 검색 뒤에 재정렬을 붙인 retriever. 날짜를 인자로 주는 것은 4일차 PRD "외부 의존 주입".
+    result = index.search(question, k=8, region=region, today=date.today().isoformat(), trace=trace, rerank=rerank)
 
     # 왜: 실패하거나 결과가 없어도 화면이 멈추지 않고 이유를 말해 준다. 어디: 답 문장.
     # 교안: 4일차 PRD "API · 입력 오류에도 앱이 멈추지 않는다" / 3일차 03 "없으면 '찾을 수 없음'".
@@ -171,6 +173,9 @@ def main() -> None:
     title_col.title("어디갈래")
     title_col.caption("실제로 있는 장소만으로 짜는 국내 여행 코스 · 지금은 검색 뼈대입니다")
     dev = toggle_col.toggle("개발자 모드", value=True)
+    # 왜: 재정렬이 순위와 시간을 얼마나 바꾸는지 같은 질문으로 바로 비교해 보인다. 일반 모드에서는 config 값(켬)을 따른다. 어디: 개발자 모드.
+    # 교안: RAG 실습1 Q7 의 "재정렬 전후 비교" 를 화면 토글로 옮겼다.
+    rerank = toggle_col.toggle("재정렬", value=config.RERANK_ENABLED) if dev else config.RERANK_ENABLED
 
     # 왜: 시나리오 버튼과 입력창 어느 쪽으로 들어온 질문이든 한 곳에서 처리한다. 화면을 그리기 전에 처리해야 결과가 바로 보인다. 어디: 그리기 전.
     # 교안: 직접 대응 없음 (Streamlit 이 매번 위에서 아래로 다시 실행하는 방식 때문에 필요한 순서).
@@ -178,7 +183,7 @@ def main() -> None:
     if st.session_state.pending:
         question, st.session_state.pending = st.session_state.pending, None
     if question:
-        answer(question, index)
+        answer(question, index, rerank)
 
     if dev:
         left, middle, right = st.columns([1, 2.2, 1.4])

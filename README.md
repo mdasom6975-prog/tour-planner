@@ -61,6 +61,12 @@ python scripts/daily_collect.py
 
 ## 실행
 
+가상환경을 켠 터미널에서 실행합니다. 가상환경 밖에서 띄우면 `kiwipiepy`를 찾지 못해 오류가 납니다.
+
+```bash
+source .venv/bin/activate
+```
+
 ```bash
 streamlit run app.py
 ```
