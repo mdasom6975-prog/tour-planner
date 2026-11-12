@@ -102,3 +102,7 @@ EVAL_INDEX_DIR = "data/eval/index"
 EVAL_POOL_DEPTH = 20     # 정답 후보를 모을 때 검색기마다 가져오는 수
 EVAL_SEED = 12           # 후보를 섞는 난수 씨앗 (재현용)
 EVAL_K = 10              # Recall@k · nDCG@k 의 k (화면에 보이는 결과 수와 같게)
+# 왜: 설정 비교(3-5a)에서 돌려 볼 값들. 고른 값은 위의 HYBRID_W_DENSE · RERANK_CANDIDATES 에 적는다. 어디: eval/compare_settings.py.
+# 교안: RAG 실습1 Q6(가중치 0.3 / 0.5 / 0.7) · Q7(재정렬 후보 수). 1.0 은 BM25 를 뺀 경우로, 기준선에서 임베딩 단독이 합침보다 높아 추가했다.
+EVAL_W_DENSE_GRID = [0.3, 0.5, 0.7, 1.0]
+EVAL_RERANK_CAND_GRID = [20, 30]

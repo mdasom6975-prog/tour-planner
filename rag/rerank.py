@@ -39,15 +39,19 @@ class Reranker:
         return self._scorer(pairs)
 
     def search(self, query: str, k: int | None = None, region: str | None = None, types: list | None = None,
-               today: str | None = None, trace=None, enabled: bool | None = None) -> dict:
+               today: str | None = None, trace=None, enabled: bool | None = None,
+               candidates: int | None = None, w_dense: float | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms"} / 실패: {"ok": False, "reason"}  (다른 검색기와 같은 모양)"""
         started = time.perf_counter()
         k = config.RERANK_K if k is None else k
         enabled = config.RERANK_ENABLED if enabled is None else enabled
+        candidates = config.RERANK_CANDIDATES if candidates is None else candidates
+        # 평가(3-5)에서 설정을 바꿔 비교할 때만 값을 넘긴다. 넘기지 않으면 아래 검색기가 config 의 값을 쓴다.
+        extra = {} if w_dense is None else {"w_dense": w_dense}
 
         # 왜: 재정렬은 느려서(30곳에 1.7초) 전체가 아니라 이미 추려진 상위 후보에만 쓴다. 어디: 후보 가져오기.
         # 교안: RAG 실습1 Q7 조건1 — Hybrid 상위 30개를 재정렬해 10개를 돌려준다.
-        found = self.base.search(query, k=config.RERANK_CANDIDATES, region=region, types=types, today=today, trace=trace)
+        found = self.base.search(query, k=candidates, region=region, types=types, today=today, trace=trace, **extra)
         if not found["ok"]:
             return found
         cands = found["results"]
