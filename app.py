@@ -124,7 +124,10 @@ def draw_card(place: dict) -> None:
             if place["overview"]:
                 excerpt = place["overview"][:140] + ("…" if len(place["overview"]) > 140 else "")
                 st.markdown(f"> {plain(excerpt)}")
-            map_url = "https://map.naver.com/p/search/" + quote(f"{place['region']} {place['title']}")
+            # 왜: 이름으로 검색하면 같은 이름이 여러 곳 나오고 축제는 아예 안 나온다. 가진 좌표로 한 곳을 바로 찍는다. 어디: 지도 링크.
+            # 교안: 직접 대응 없음. 설계 원칙 "사실은 코드가" — 위치를 지도 검색에 맡기지 않고 받은 좌표를 그대로 쓴다.
+            name = quote(place["title"].replace(",", " "))  # 쉼표는 이름 · 위도 · 경도를 나누는 글자라 이름에서 뺀다
+            map_url = f"https://map.kakao.com/link/map/{name},{place['lat']},{place['lon']}"
             st.caption(f"정보 기준일 {place['modified']} · [지도에서 보기]({map_url}) · 출처 : ⓒ한국관광공사")
 
 
