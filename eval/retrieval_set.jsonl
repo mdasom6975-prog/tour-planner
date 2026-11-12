@@ -1,0 +1,30 @@
+{"id": "r01", "query": "부산 낙곱새 맛집", "region": "부산", "expect_region": "부산", "kind": "이름·낱말", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r02", "query": "강릉 초당 순두부", "region": "강릉", "expect_region": "강릉", "kind": "이름·낱말", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r03", "query": "제주 흑돼지 구이", "region": "제주", "expect_region": "제주", "kind": "이름·낱말", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r04", "query": "북촌한옥마을", "region": "서울", "expect_region": "서울", "kind": "이름·낱말", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r05", "query": "전주 비빔밥", "region": "전북", "expect_region": "전북", "kind": "이름·낱말", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r06", "query": "담양 떡갈비", "region": "전남광주", "expect_region": "전남광주", "kind": "이름·낱말", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r07", "query": "밤에 야경 보기 좋은 부산", "region": "부산", "expect_region": "부산", "kind": "뜻", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r08", "query": "비 오는 날 서울에서 실내로 갈 만한 곳", "region": "서울", "expect_region": "서울", "kind": "뜻", "case": "경계", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r09", "query": "조용히 쉬어 갈 수 있는 전북 사찰", "region": "전북", "expect_region": "전북", "kind": "뜻", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r10", "query": "광주에서 민주화 역사를 배울 수 있는 곳", "region": "전남광주", "expect_region": "전남광주", "kind": "뜻", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r11", "query": "강릉에서 바다 보며 커피 마실 곳", "region": "강릉", "expect_region": "강릉", "kind": "뜻", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r12", "query": "부모님 모시고 걷기 편한 강릉", "region": "강릉", "expect_region": "강릉", "kind": "뜻", "case": "경계", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r13", "query": "아이가 뛰어놀 수 있는 제주", "region": "제주", "expect_region": "제주", "kind": "뜻", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r14", "query": "제주에서 사진 찍기 좋은 오름", "region": "제주", "expect_region": "제주", "kind": "뜻", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r15", "query": "유아차 끌고 갈 수 있는 부산 관광지", "region": "부산", "expect_region": "부산", "kind": "조건", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r16", "query": "휠체어 빌릴 수 있는 강릉", "region": "강릉", "expect_region": "강릉", "kind": "조건", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r17", "query": "강아지와 함께 갈 수 있는 제주", "region": "제주", "expect_region": "제주", "kind": "조건", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r18", "query": "오디오 가이드가 있는 서울 박물관", "region": "서울", "expect_region": "서울", "kind": "조건", "case": "경계", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r19", "query": "수유실 있는 전북 문화시설", "region": "전북", "expect_region": "전북", "kind": "조건", "case": "정상", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r20", "query": "엘리베이터 있는 광주 전남 전시관", "region": "전남광주", "expect_region": "전남광주", "kind": "조건", "case": "경계", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r21", "query": "11월 부산 축제", "region": "부산", "expect_region": "부산", "kind": "축제·시기", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r22", "query": "연말 서울 빛 축제", "region": "서울", "expect_region": "서울", "kind": "축제·시기", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r23", "query": "전북 먹거리 축제", "region": "전북", "expect_region": "전북", "kind": "축제·시기", "case": "정상", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r24", "query": "광주 비엔날레", "region": "전남광주", "expect_region": "전남광주", "kind": "축제·시기", "case": "엣지", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r25", "query": "부산 스키장", "region": "부산", "expect_region": "부산", "kind": "정답 없음", "case": "엣지", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r26", "query": "서울 해수욕장", "region": "서울", "expect_region": "서울", "kind": "정답 없음", "case": "엣지", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r27", "query": "제주 눈썰매장", "region": "제주", "expect_region": "제주", "kind": "정답 없음", "case": "엣지", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r28", "query": "오죽헌 근처 볼거리", "region": null, "expect_region": "강릉", "kind": "지역 없음", "case": "경계", "split": "확인", "today": "2026-11-12", "answers": null}
+{"id": "r29", "query": "전주 한옥마을", "region": null, "expect_region": "전북", "kind": "지역 없음", "case": "경계", "split": "고름", "today": "2026-11-12", "answers": null}
+{"id": "r30", "query": "담양 대나무숲", "region": null, "expect_region": "전남광주", "kind": "지역 없음", "case": "경계", "split": "고름", "today": "2026-11-12", "answers": null}
