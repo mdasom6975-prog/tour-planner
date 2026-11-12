@@ -101,3 +101,4 @@ EVAL_PLACES = "data/eval/places_2026-11-12.jsonl"
 EVAL_INDEX_DIR = "data/eval/index"
 EVAL_POOL_DEPTH = 20     # 정답 후보를 모을 때 검색기마다 가져오는 수
 EVAL_SEED = 12           # 후보를 섞는 난수 씨앗 (재현용)
+EVAL_K = 10              # Recall@k · nDCG@k 의 k (화면에 보이는 결과 수와 같게)
