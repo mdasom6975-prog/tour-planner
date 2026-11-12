@@ -1,6 +1,6 @@
-"""목록 · 소개글 · 휴무일 세 파일을 장소 한 곳당 한 줄로 합친다. API 를 호출하지 않는다. (PRD 14번 1단계 중 1-6a)
+"""목록 · 소개글 · 휴무일 · 무장애 · 반려동물 파일을 장소 한 곳당 한 줄로 합친다. API 를 호출하지 않는다. (PRD 14번 1단계 중 1-6a, A-4)
 
-검색기가 읽을 글(search_text)도 여기서 만든다 (1-6b). 휴무일 해석(1-6c)은 여기 없다.
+검색기가 읽을 글(search_text)도 여기서 만든다 (1-6b). 무장애 · 반려동물을 그 글에 넣는 일(A-5)은 여기 없다.
 실행:  python -m ingest.clean
 """
 import html
@@ -29,6 +29,21 @@ FIELD_MAP = {
     "39": {"rest": "restdatefood", "hours": "opentimefood", "contact": "infocenterfood", "parking": "parkingfood",
            "extra": {"menu_main": "firstmenu", "menu": "treatmenu", "takeout": "packing"}},
 }
+
+# 왜: 원본 이름(handicapetc, brailepromotion)은 화면과 LLM이 읽기 어려워 대상별 묶음과 우리말 이름으로 바꾼다. 값은 원문 그대로 둔다. 어디: access 칸.
+# 교안: 4일차 PRD "도시 → 통화 표(코드)". 항목 이름은 2026-11-12 받은 1,857곳의 실제 응답에서 확인했다.
+ACCESS_MAP = {
+    "이동": {"parking": "주차", "route": "접근로", "publictransport": "대중교통", "ticketoffice": "매표소", "promotion": "홍보물",
+            "wheelchair": "휠체어", "exit": "출입통로", "elevator": "엘리베이터", "restroom": "화장실", "auditorium": "관람석",
+            "room": "객실", "handicapetc": "기타"},
+    "시각": {"braileblock": "점자블록", "helpdog": "보조견 동반", "guidehuman": "안내요원", "audioguide": "오디오가이드",
+            "bigprint": "큰 활자", "brailepromotion": "점자 홍보물", "guidesystem": "유도 안내", "blindhandicapetc": "기타"},
+    "청각": {"signguide": "수어 안내", "videoguide": "자막 영상", "hearingroom": "객실", "hearinghandicapetc": "기타"},
+    "영유아": {"stroller": "유아차", "lactationroom": "수유실", "babysparechair": "유아용 의자", "infantsfamilyetc": "기타"},
+}
+# risk(사고 예방)는 뺀다. 2026-11-12 정제된 곳 중 값이 있는 99곳 모두 allowed(견종)와 같은 문장이었다(원본이 그렇게 온다).
+PET_MAP = {"scope": "범위", "allowed": "견종", "required": "필수", "notes": "유의",
+           "facilities": "시설", "provided": "비치", "rental": "대여", "for_sale": "판매"}
 
 
 def _text(value) -> str:
@@ -100,14 +115,30 @@ def build_search_text(place: dict) -> str:
     return "\n".join(lines)
 
 
+def _access(row: dict | None) -> dict:
+    # 왜: 값이 있는 항목만 남긴다. 빈 사전은 "시설 없음" 이 아니라 "정보 없음" 이다(아직 안 받았거나 관광공사에 내용이 없음). 어디: access 칸.
+    # 교안: 2일차 Part1 구조화 출력 — 정해진 이름과 모양. "있음/없음" 판정은 하지 않는다(원문에 좋은 점과 나쁜 점이 섞여 있다).
+    data = (row or {}).get("data") or {}
+    groups = {g: {label: _text(data.get(src)) for src, label in fields.items() if _text(data.get(src))}
+              for g, fields in ACCESS_MAP.items()}
+    return {g: v for g, v in groups.items() if v}
+
+
+def _pet(row: dict | None) -> dict:
+    return {label: _text((row or {}).get(src)) for src, label in PET_MAP.items() if _text((row or {}).get(src))}
+
+
 def _load(name: str) -> dict:
+    # 없는 파일은 빈 것으로 본다. 꼭 있어야 하는 파일은 build_places 가 먼저 검사한다.
+    if not (RAW_DIR / name).exists():
+        return {}
     with (RAW_DIR / name).open(encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
     return {r["contentid"]: r for r in rows}
 
 
 def build_places() -> dict:
-    """성공: {"ok": True, "count", "by_type", "bad_coords", "hidden", "showflag_unknown", "path"} / 실패: {"ok": False, "reason"}"""
+    """성공: {"ok": True, "count", "by_type", "bad_coords", "hidden", "showflag_unknown", "access", "pet", "path"} / 실패: {"ok": False, "reason"}"""
     # 왜: 세 파일 중 하나라도 없으면 합칠 수 없다. 어디: 함수 맨 앞의 입력 검사.
     # 교안: 3일차 Part2 "에러도 결과로".
     needed = [f"list_{r}.jsonl" for r in config.REGIONS] + ["detail_common.jsonl", "detail_intro.jsonl"]
@@ -116,7 +147,11 @@ def build_places() -> dict:
         return {"ok": False, "reason": f"원본 파일이 없습니다: {missing}"}
 
     common, intro = _load("detail_common.jsonl"), _load("detail_intro.jsonl")
+    # 왜: 무장애 · 반려동물은 없어도 코스를 짤 수 있는 덧붙는 정보라, 파일이 없으면 멈추지 않고 빈 칸으로 둔다. 어디: 입력.
+    # 교안: RAG 실습1 Q1 — 문서에 메타데이터를 붙여 두고 뒤에서 거르거나 보여 주는 데 쓴다.
+    access, pet = _load("access.jsonl"), _load("pet.jsonl")
     places, by_type, bad_coords = [], {}, 0
+    counts = {"access_fetched": 0, "access": 0, "pet": 0}
     flags = {"0": 0, "1": 0, "": 0}
 
     # 왜: 목록 순서대로 돌면 원본이 같을 때 결과 순서도 항상 같다. 어디: 합치기의 바깥 반복.
@@ -159,7 +194,12 @@ def build_places() -> dict:
                 "parking": _text(i.get(fmap["parking"])) if fmap["parking"] else "",
                 "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
                 "showflag": sync.get(cid, {}).get("showflag") or "",   # "1" 표출 · "0" 비표출 · "" 모름
+                "access": _access(access.get(cid)),   # {"이동": {"주차": "…"}, "시각": {…}, …} · 빈 사전은 정보 없음
+                "pet": _pet(pet.get(cid)),            # {"범위": "…", "견종": "…", …} · 빈 사전은 정보 없음
             })
+            counts["access_fetched"] += cid in access
+            counts["access"] += bool(places[-1]["access"])
+            counts["pet"] += bool(places[-1]["pet"])
             flags[places[-1]["showflag"]] = flags.get(places[-1]["showflag"], 0) + 1
             places[-1]["search_text"] = build_search_text(places[-1])
             # 왜: 검증기가 "이 요일에 가도 되는가" 를 코드로 판정하려면 문장이 아닌 값이 필요하다. 어디: 6단계 검증기의 입력.
@@ -178,7 +218,7 @@ def build_places() -> dict:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
 
     return {"ok": True, "count": len(places), "by_type": by_type, "bad_coords": bad_coords,
-            "hidden": flags["0"], "showflag_unknown": flags[""], "path": str(OUT_PATH)}
+            "hidden": flags["0"], "showflag_unknown": flags[""], **counts, "path": str(OUT_PATH)}
 
 
 if __name__ == "__main__":
