@@ -128,7 +128,14 @@ def draw_card(place: dict) -> None:
             # 교안: 직접 대응 없음. 설계 원칙 "사실은 코드가" — 위치를 지도 검색에 맡기지 않고 받은 좌표를 그대로 쓴다.
             name = quote(place["title"].replace(",", " "))  # 쉼표는 이름 · 위도 · 경도를 나누는 글자라 이름에서 뺀다
             map_url = f"https://map.kakao.com/link/map/{name},{place['lat']},{place['lon']}"
-            st.caption(f"정보 기준일 {place['modified']} · [지도에서 보기]({map_url}) · 출처 : ⓒ한국관광공사")
+            links = f"[위치 보기]({map_url})"
+            # 왜: 좌표 핀에는 영업시간 · 후기가 안 뜬다. 음식점만 "주소 + 이름" 검색 링크를 하나 더 둔다(4곳을 열어 보니 음식점 3곳은 한 곳만 나왔고 공원은 엉뚱한 가게가 나왔다). 어디: 지도 링크.
+            # 교안: 직접 대응 없음. 주소 뒤 괄호(동 이름)는 검색을 흐려서 떼고, 주소에 이름이 이미 있으면 다시 붙이지 않는다.
+            if place["type"] == "음식점":
+                road = place["addr"].split("(")[0].strip()
+                query = road if place["title"] in road else f"{road} {place['title']}"
+                links += f" · [가게 정보]({'https://map.kakao.com/link/search/' + quote(query)})"
+            st.caption(f"정보 기준일 {place['modified']} · {links} · 출처 : ⓒ한국관광공사")
 
 
 def draw_chat() -> None:
