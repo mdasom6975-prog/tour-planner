@@ -16,7 +16,7 @@ ACTIVE_PATH = RAW_DIR / "festivals_active.jsonl"
 
 
 def build_queue() -> dict:
-    """성공: {"ok": True, "count", "path"} / 실패: {"ok": False, "reason"}"""
+    """성공: {"ok": True, "count", "excluded_hidden", "path"} / 실패: {"ok": False, "reason"}"""
     # 왜: 대기열은 이미 받은 목록에서만 만든다. 목록이 없으면 만들 수 없다. 어디: 함수 맨 앞.
     # 교안: 3일차 Part2 "에러도 결과로" — 입력이 없을 때 예외 대신 사유를 돌려준다.
     paths = [RAW_DIR / f"list_{region}.jsonl" for region in config.REGIONS]
@@ -28,6 +28,17 @@ def build_queue() -> dict:
     # 왜: 1차 범위(관광지 · 문화시설 · 축제 · 음식점)만 받기로 정했다. 어디: 대기열에 넣을 장소 고르기.
     # 교안: 4일차 PRD "하지 않을 것" — 범위는 코드가 아니라 설정(config)에서 정한다.
     df = df[df["contenttypeid"].isin(config.DETAIL_TYPES)].copy()
+
+    # 왜: 비표출(showflag 0)인 곳은 보여 줄 수 없으므로 상세를 받느라 한도를 쓰지 않는다. 동기화 파일이 없는 지역은 모르므로 빼지 않는다. 어디: 대기열.
+    # 교안: 4일차 PRD 위험 대응 "무료 API 호출 제한". 끝난 축제를 빼는 아래 규칙과 같은 생각이다.
+    hidden = set()
+    for region in config.REGIONS:
+        sync_path = RAW_DIR / f"sync_{region}.jsonl"
+        if sync_path.exists():
+            with sync_path.open(encoding="utf-8") as f:
+                hidden |= {r["contentid"] for r in map(json.loads, f) if r.get("showflag") == "0"}
+    excluded_hidden = int(df["contentid"].isin(hidden).sum())
+    df = df[~df["contentid"].isin(hidden)].copy()
 
     # 왜: 묶음 안에서는 화면에 사진이 보이는 장소, 최근에 고쳐진 장소부터 받는다. 어디: 묶음 내 순서.
     # 교안: RAG 실습1 Q1 — corpus 를 만들 때 정렬 기준을 고정해 매번 같은 결과가 나오게 하던 것.
@@ -79,7 +90,7 @@ def build_queue() -> dict:
                 "modifiedtime": row.modifiedtime,
             }, ensure_ascii=False) + "\n")
 
-    return {"ok": True, "count": len(df), "path": str(QUEUE_PATH)}
+    return {"ok": True, "count": len(df), "excluded_hidden": excluded_hidden, "path": str(QUEUE_PATH)}
 
 
 if __name__ == "__main__":
