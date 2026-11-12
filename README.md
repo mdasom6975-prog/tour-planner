@@ -53,7 +53,7 @@ python -m ingest.collect_list 부산 강릉 제주 서울 전북 전남광주
 python -m ingest.collect_pet
 ```
 
-3. 매일 한 번, 오전 8시 이후에 실행합니다. 축제 목록, 소개글, 휴무일 · 이용시간, 무장애 정보를 한도까지 받고 검색용 데이터(`data/processed/places.jsonl`)를 다시 만듭니다. 중간에 끊겨도 받은 곳은 건너뛰고 이어받습니다.
+3. 매일 한 번, 오전 8시 이후에 실행합니다. 표출 여부(동기화 목록), 축제 목록, 소개글, 휴무일 · 이용시간, 무장애 정보를 한도까지 받고 검색용 데이터(`data/processed/places.jsonl`)를 다시 만듭니다. 중간에 끊겨도 받은 곳은 건너뛰고 이어받습니다.
 
 ```bash
 python scripts/daily_collect.py
