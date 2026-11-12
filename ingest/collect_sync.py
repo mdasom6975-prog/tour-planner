@@ -14,9 +14,6 @@ import config
 from ingest.tourapi import call
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
-# 1-7b · 1-7c 가 쓰는 값만 남긴다. 이름은 사람이 기록을 읽을 때 알아보려고 둔다.
-KEEP = ("contentid", "contenttypeid", "title", "showflag", "modifiedtime")
-
 
 def collect_sync(region: str, today: str | None = None) -> dict:
     """성공: {"ok": True, "region", "count", "hidden", "calls", "path"} / 실패: {"ok": False, "reason"}"""
@@ -48,8 +45,8 @@ def collect_sync(region: str, today: str | None = None) -> dict:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         for item in items:
-            row = {k: item.get(k) for k in KEEP}
-            f.write(json.dumps({**row, "region": region, "collected_at": collected}, ensure_ascii=False) + "\n")
+            # 응답 항목을 전부 남긴다. 평소 목록과 항목이 같아(showflag 만 추가) 1-7c-1 이 이것으로 목록을 고친다.
+            f.write(json.dumps({**item, "region": region, "collected_at": collected}, ensure_ascii=False) + "\n")
 
     flags = Counter(i.get("showflag") for i in items)
     return {"ok": True, "region": region, "count": len(items), "hidden": flags.get("0", 0),

@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
+from ingest.apply_sync import apply_sync
 from ingest.clean import build_places
 from ingest.collect_detail import collect_detail
 from ingest.collect_festivals import collect_active_festivals
@@ -22,24 +23,26 @@ from ingest.tourapi import USAGE_PATH
 
 
 def sync_all() -> dict:
-    """여섯 지역의 동기화 목록을 받고, 비표출 수와 "목록을 받은 뒤 수정된 곳" 수를 센다."""
+    """여섯 지역의 동기화 목록을 받아 우리 목록에 반영하고, 비표출 · 수정된 곳 · 새 장소 수를 센다."""
     # 왜: 표출 여부는 날마다 바뀌므로 대기열 · 정제보다 먼저 받아야 그날 값이 쓰인다. 한 지역이 실패하면 그 지역은 어제 파일을 그대로 쓴다. 어디: 묶음의 맨 앞.
     # 교안: 직접 대응 없음 (관광공사 요구 "매일 동기화 · 비표출 제외"). 실패를 모아 돌려주는 것은 3일차 Part2 "에러도 결과로".
-    hidden, changed, calls, errors = {}, {}, 0, []
+    hidden, changed, added, calls, errors = {}, {}, {}, 0, []
     for region in config.REGIONS:
         r = collect_sync(region)
         if not r["ok"]:
             errors.append(f"{region}: {r['reason']}")
             continue
         hidden[region], calls = r["hidden"], calls + r["calls"]
-        # 우리 목록의 수정일보다 동기화 목록의 수정일이 뒤인 곳 = 다시 받아야 할 곳 (1-7c 가 쓸 수).
-        with (RAW_DIR / f"sync_{region}.jsonl").open(encoding="utf-8") as f:
-            newest = {x["contentid"]: x["modifiedtime"] for x in map(json.loads, f)}
-        with (RAW_DIR / f"list_{region}.jsonl").open(encoding="utf-8") as f:
-            changed[region] = sum(newest.get(x["contentid"], "") > x.get("modifiedtime", "") for x in map(json.loads, f))
+        # 왜: 받은 동기화 목록으로 우리 목록의 이름 · 주소 · 좌표 · 수정일을 고치고 새 장소를 더한다 (1-7c-1). 어디: 지역마다 받은 직후.
+        # 교안: 직접 대응 없음. 받기(collect_sync)와 반영(apply_sync)을 나눈 것은 "도구는 한 가지 일만".
+        a = apply_sync(region)
+        if not a["ok"]:
+            errors.append(f"{region} 목록 반영: {a['reason']}")
+            continue
+        changed[region], added[region] = a["updated"], a["added"]
     if errors:
-        return {"ok": False, "reason": " / ".join(errors), "hidden": hidden, "changed": changed, "calls": calls}
-    return {"ok": True, "hidden": hidden, "changed": changed, "calls": calls}
+        return {"ok": False, "reason": " / ".join(errors), "hidden": hidden, "changed": changed, "added": added, "calls": calls}
+    return {"ok": True, "hidden": hidden, "changed": changed, "added": added, "calls": calls}
 
 
 def main():
@@ -85,7 +88,7 @@ def main():
         print(f"  쓸 수 있는 축제   {fest['count']}곳  {fest['by_region']}")
     if sync.get("hidden"):
         print(f"  비표출            {sum(sync['hidden'].values()):,}곳  {sync['hidden']}  (호출 {sync['calls']}회)")
-        print(f"  받은 뒤 수정됨    {sum(sync['changed'].values())}곳  {sync['changed']}")
+        print(f"  목록에 반영       수정 {sum(sync['changed'].values())}곳 {sync['changed']} · 새 장소 {sum(sync['added'].values())}곳")
     if queue.get("ok"):
         print(f"  대기열            {queue['count']}곳  (비표출 {queue.get('excluded_hidden', '?')}곳 제외)")
     print(f"  {'':<18}{'오늘 받음':>8}{'실패':>6}{'남은 곳':>9}{'남은 일수':>9}{'서버 남은 한도':>12}")
