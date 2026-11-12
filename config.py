@@ -93,3 +93,11 @@ MAX_REDRAFTS = 2
 # 왜: data/ 는 git 에 올리지 않아 노트북 한 대에만 있었다. 비공개 저장소의 릴리스에 날짜별 사본을 둔다. 어디: scripts/backup_data.py.
 # 교안: 직접 대응 없음 (유실 대비 · 다른 기기에서 시연). 릴리스 이름을 여기 두어 스크립트에 글자를 박지 않는다.
 BACKUP_RELEASE_TAG = "data-backup"
+
+# --- 검색 평가 (3단계) ----------------------------------------------------
+# 왜: 수집으로 장소가 날마다 늘어, 평가는 날짜로 고정한 사본에 대해 잰다. 벡터도 따로 두어 평가가 실제 색인(data/index)을 줄이지 않게 한다. 어디: eval/.
+# 교안: RAG 실습1 Q2 — 정답 목록(qrels)과 문서 묶음(corpus)을 고정해야 점수를 비교할 수 있다.
+EVAL_PLACES = "data/eval/places_2026-11-12.jsonl"
+EVAL_INDEX_DIR = "data/eval/index"
+EVAL_POOL_DEPTH = 20     # 정답 후보를 모을 때 검색기마다 가져오는 수
+EVAL_SEED = 12           # 후보를 섞는 난수 씨앗 (재현용)

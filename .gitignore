@@ -10,3 +10,4 @@ runs/
 .idea/
 data/processed/
 data/eval/
+eval/pool/
