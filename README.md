@@ -59,6 +59,22 @@ python -m ingest.collect_pet
 python scripts/daily_collect.py
 ```
 
+### 데이터 사본 (백업과 복원)
+
+수집에 여러 날이 걸리므로, 받은 데이터를 비공개 저장소의 릴리스(`data-backup`)에 날짜별로 올려 둡니다. `gh` 로그인이 필요하고, 저장소가 비공개가 아니면 올리지 않습니다. `.env`는 들어가지 않습니다.
+
+매일 수집이 끝난 뒤 올립니다.
+
+```bash
+python scripts/backup_data.py
+```
+
+다른 기기에서는 수집 대신 가장 최근 사본을 내려받아 풉니다. 이미 `data/`가 있으면 `--force`를 붙여야 덮어씁니다.
+
+```bash
+python scripts/backup_data.py --restore
+```
+
 ## 실행
 
 가상환경을 켠 터미널에서 실행합니다. 가상환경 밖에서 띄우면 `kiwipiepy`를 찾지 못해 오류가 납니다.
@@ -84,7 +100,7 @@ streamlit run app.py
 | `ingest/` | TourAPI 호출, 수집, 정제, 휴무일 해석 |
 | `rag/` | 검색. 바깥에서는 `rag/retriever.py`의 `Retriever.search`만 부릅니다 |
 | `harness/` | 실행 기록 (`runs/날짜/실행번호.jsonl`) |
-| `scripts/` | 키 점검, 매일 수집, 목록 집계 |
+| `scripts/` | 키 점검, 매일 수집, 데이터 사본, 목록 집계 |
 | `data/` | 받은 원본(`raw/`), 정제본(`processed/`), 벡터(`index/`). git에 올리지 않습니다 |
 | `PRD.md` | 명세. 범위, 합격선, 구현 순서 |
 | `CLAUDE.md` | 작업 규칙과 설계 원칙 |
