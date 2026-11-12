@@ -27,6 +27,11 @@ def is_visible(place: dict, region: str | None = None, types: list | None = None
     if types and place["type"] not in types:
         return False
 
+    # 왜: 관광공사가 비표출(showflag 0) 콘텐츠를 노출하지 말라고 요구했다. 여기서 빼면 네 검색기와 화면에 한꺼번에 적용된다. 어디: 모든 검색.
+    # 교안: 2일차 Part4 "출력 전에 코드로 거른다". 값이 없으면("모름") 남긴다 — 동기화를 못 받은 날 결과가 비지 않게.
+    if place.get("showflag") == "0":
+        return False
+
     # 왜: 여행은 항상 오늘 이후이므로, 이미 끝난 행사는 어떤 여행에도 맞을 수 없다. 뒤 단계로 넘길 이유가 없다. 어디: 모든 검색.
     # 교안: "숫자와 사실 판정은 코드가" — 날짜 비교는 LLM 이 아니라 코드가 한다. 기준일은 시험할 수 있게 인자로 받는다.
     # 종료일이 오늘인 행사는 남긴다(오늘 갈 수 있다). 종료일 정보가 없으면 지우지 않고 남긴다.

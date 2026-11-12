@@ -107,7 +107,7 @@ def _load(name: str) -> dict:
 
 
 def build_places() -> dict:
-    """성공: {"ok": True, "count", "by_type", "bad_coords", "path"} / 실패: {"ok": False, "reason"}"""
+    """성공: {"ok": True, "count", "by_type", "bad_coords", "hidden", "showflag_unknown", "path"} / 실패: {"ok": False, "reason"}"""
     # 왜: 세 파일 중 하나라도 없으면 합칠 수 없다. 어디: 함수 맨 앞의 입력 검사.
     # 교안: 3일차 Part2 "에러도 결과로".
     needed = [f"list_{r}.jsonl" for r in config.REGIONS] + ["detail_common.jsonl", "detail_intro.jsonl"]
@@ -117,10 +117,15 @@ def build_places() -> dict:
 
     common, intro = _load("detail_common.jsonl"), _load("detail_intro.jsonl")
     places, by_type, bad_coords = [], {}, 0
+    flags = {"0": 0, "1": 0, "": 0}
 
     # 왜: 목록 순서대로 돌면 원본이 같을 때 결과 순서도 항상 같다. 어디: 합치기의 바깥 반복.
     # 교안: RAG 실습1 Q1 — corpus 를 만들 때 순서를 고정해 재현되게 하던 것.
     for region in config.REGIONS:
+        # 왜: 표출 여부는 평소 목록에 없고 동기화 목록(1-7a)에만 있다. 파일이 없거나 그 장소가 없으면 빈 값("모름")으로 두고 숨기지 않는다. 어디: 지역마다 한 번.
+        # 교안: 3일차 Part2 "에러도 결과로" — 동기화를 못 받은 날에도 정제가 멈추거나 검색이 통째로 비지 않게 한다.
+        sync_name = f"sync_{region}.jsonl"
+        sync = _load(sync_name) if (RAW_DIR / sync_name).exists() else {}
         for cid, item in _load(f"list_{region}.jsonl").items():
             # 소개글과 휴무일이 둘 다 있는 곳만 넣는다. 수집이 진행되면 다시 실행해 늘린다.
             if cid not in common or cid not in intro:
@@ -153,7 +158,9 @@ def build_places() -> dict:
                 "contact": _text(i.get(fmap["contact"])) if fmap["contact"] else "",
                 "parking": _text(i.get(fmap["parking"])) if fmap["parking"] else "",
                 "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
+                "showflag": sync.get(cid, {}).get("showflag") or "",   # "1" 표출 · "0" 비표출 · "" 모름
             })
+            flags[places[-1]["showflag"]] = flags.get(places[-1]["showflag"], 0) + 1
             places[-1]["search_text"] = build_search_text(places[-1])
             # 왜: 검증기가 "이 요일에 가도 되는가" 를 코드로 판정하려면 문장이 아닌 값이 필요하다. 어디: 6단계 검증기의 입력.
             # 교안: "숫자와 사실 판정은 코드가". 축제는 휴무일 대신 행사 기간으로 검증하므로 해당 없음으로 둔다.
@@ -170,7 +177,8 @@ def build_places() -> dict:
         for p in places:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
 
-    return {"ok": True, "count": len(places), "by_type": by_type, "bad_coords": bad_coords, "path": str(OUT_PATH)}
+    return {"ok": True, "count": len(places), "by_type": by_type, "bad_coords": bad_coords,
+            "hidden": flags["0"], "showflag_unknown": flags[""], "path": str(OUT_PATH)}
 
 
 if __name__ == "__main__":
