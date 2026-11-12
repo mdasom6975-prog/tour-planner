@@ -108,6 +108,15 @@ def build_search_text(place: dict) -> str:
     if hints:
         lines.append(". ".join(h.replace("\n", " ") for h in hints))
 
+    # 왜: "휠체어", "수유실", "강아지" 로 찾으려면 그 낱말이 본문에 있어야 한다. 값은 원문 그대로 넣고, 정보가 없으면 줄을 넣지 않는다("정보 없음" 이 검색에 걸리지 않게). 어디: 소개글 앞 (A-5).
+    # 교안: RAG 실습1 Q3 · Q8. "화장실 없음" 같은 부정 문장도 들어가므로 그 영향은 3단계 평가에서 잰다.
+    flat = lambda s: s.replace("\n", " ")
+    if place.get("access"):
+        groups = [f"{g}: " + " / ".join(f"{k} {flat(v)}" for k, v in items.items()) for g, items in place["access"].items()]
+        lines.append("무장애 — " + " · ".join(groups))
+    if place.get("pet"):
+        lines.append("반려동물 — " + " / ".join(f"{k} {flat(v)}" for k, v in place["pet"].items()))
+
     # 왜: 휴무일 · 이용시간 · 행사 기간 · 전화 · 홈페이지는 일부러 넣지 않는다. 날짜와 휴무는 검색이 아니라 코드가 거른다.
     # 교안: "숫자와 사실 판정은 코드가" — 본문에 넣으면 "화요일" 검색에 화요일 휴무인 곳이 걸린다.
     if place["overview"]:
