@@ -27,17 +27,34 @@ OPERATIONS = {
 }
 
 
-def _done_ids(path: Path) -> set:
-    # 왜: "어디까지 받았나" 를 따로 적지 않고 저장 파일 자체를 기록으로 쓴다. 어디: 이어받기의 근거.
+def _done(path: Path) -> dict:
+    """받은 곳마다 "그때 기준이 된 수정 시각" 을 돌려준다. {contentid: "YYYYMMDDhhmmss"}"""
+    # 왜: "어디까지 받았나" 를 따로 적지 않고 저장 파일 자체를 기록으로 쓴다. 같은 곳이 여러 줄이면 마지막 줄이 최신이다. 어디: 이어받기의 근거.
     # 교안: 3일차 05 LangGraph checkpointer 와 같은 생각 — 저장된 상태를 읽어 이어서 한다.
+    done = {}
     if not path.exists():
-        return set()
+        return done
     with path.open(encoding="utf-8") as f:
-        return {json.loads(line)["contentid"] for line in f if line.strip()}
+        for row in (json.loads(line) for line in f if line.strip()):
+            # 1-7c-2 전에 받은 줄에는 수정 시각이 없어 받은 날의 0시로 본다. 같은 날 수정된 곳은 낡은 것으로 보고 다시 받는다(안전한 쪽).
+            done[row["contentid"]] = row.get("source_modified") or row["collected_at"].replace("-", "") + "000000"
+    return done
+
+
+def _modified_now() -> dict:
+    # 왜: 대기열의 수정 시각은 만든 날 것이라 낡았을 수 있다(무장애 대기열은 매일 다시 만들지 않는다). 매일 갱신되는 목록에서 직접 읽는다. 어디: 낡음 판정.
+    # 교안: 직접 대응 없음. "숫자와 사실 판정은 코드가" — 다시 받을지를 날짜 비교로 정한다.
+    modified = {}
+    for region in config.REGIONS:
+        path = RAW_DIR / f"list_{region}.jsonl"
+        if path.exists():
+            with path.open(encoding="utf-8") as f:
+                modified.update({r["contentid"]: r.get("modifiedtime", "") for r in map(json.loads, f)})
+    return modified
 
 
 def collect_detail(operation: str, max_places: int | None = None, today: str | None = None) -> dict:
-    """결과: {"ok", "fetched", "skipped", "empty", "failed", "stopped", "avg_sec", "remaining"}"""
+    """결과: {"ok", "fetched", "refreshed", "stale", "skipped", "empty", "failed", "stopped", "avg_sec", "remaining"}"""
     # 왜: 모르는 오퍼레이션으로 한도를 쓰지 않게 먼저 거른다. 어디: 함수 맨 앞의 입력 검사.
     # 교안: 3일차 Part2 "에러도 결과로" — 잘못된 입력도 예외 대신 사유를 돌려준다.
     if operation not in OPERATIONS:
@@ -48,12 +65,19 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
         return {"ok": False, "reason": f"대기열({spec['queue']})이 없습니다. 먼저 {spec['plan']} 을 실행하세요"}
 
     out_path = RAW_DIR / spec["file"]
-    done = _done_ids(out_path)
+    done = _done(out_path)
     with queue_path.open(encoding="utf-8") as f:
         queue = [json.loads(line) for line in f if line.strip()]
 
+    # 왜: 받은 뒤에 관광공사가 고친 곳은 저장본이 낡았다. 관광공사 요구(매일 동기화)에 따라 새 장소보다 먼저 다시 받는다. 어디: 받을 순서.
+    # 교안: 4일차 PRD "결과 캐시" 의 짝 — 캐시는 원본이 바뀌면 버려야 한다. 순서(낡은 것 먼저)는 2026-11-12 에 정했다.
+    modified = _modified_now()
+    stale_ids = {p["contentid"] for p in queue if p["contentid"] in done and modified.get(p["contentid"], "") > done[p["contentid"]]}
+    queue = [p for p in queue if p["contentid"] in stale_ids] + [p for p in queue if p["contentid"] not in stale_ids]
+    waiting = sum(1 for p in queue if p["contentid"] not in done)
+
     collected = today or date.today().isoformat()
-    fetched = skipped = empty = failed = consecutive = 0
+    fetched = refreshed = skipped = empty = failed = consecutive = 0
     elapsed = 0.0
     stopped = "대기열 끝"
 
@@ -61,13 +85,14 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
     # 교안: 직접 대응 없음. 목록(1-3)은 "전부 성공해야 저장" 이었지만 950건은 다시 받기 비싸 반대로 한다.
     with out_path.open("a", encoding="utf-8") as out:
         for place in queue:
-            if place["contentid"] in done:
+            is_stale = place["contentid"] in stale_ids
+            if place["contentid"] in done and not is_stale:
                 skipped += 1
                 continue
 
             # 왜: 시험할 때 몇 곳만 받고 멈추기 위해서다. 어디: 호출 전 상한 검사.
             # 교안: 3일차 day3_tools.run_agent 의 max_rounds — 반복에는 코드로 정한 상한을 둔다.
-            if max_places is not None and fetched + empty >= max_places:
+            if max_places is not None and fetched + refreshed + empty >= max_places:
                 stopped = f"요청한 {max_places}곳 완료"
                 break
 
@@ -106,31 +131,37 @@ def collect_detail(operation: str, max_places: int | None = None, today: str | N
                 "contenttypeid": place["contenttypeid"],
                 "region": place["region"],
                 "collected_at": collected,
+                "source_modified": modified.get(place["contentid"], ""),   # 이 시각까지의 수정분이 반영된 응답이다
                 "empty": item is None,
                 "data": item,
             }, ensure_ascii=False) + "\n")
             out.flush()
-            if item is None:
+            # 다시 받은 곳은 새로 받은 곳과 따로 센다 (남은 곳 계산에 들어가면 안 된다).
+            if is_stale:
+                refreshed += 1
+            elif item is None:
                 empty += 1
             else:
                 fetched += 1
 
-            if (fetched + empty) % 100 == 0:
-                print(f"  {operation}: {fetched + empty}곳 받음", flush=True)
+            if (fetched + refreshed + empty) % 100 == 0:
+                print(f"  {operation}: {fetched + refreshed + empty}곳 받음", flush=True)
             time.sleep(config.TOURAPI_SLEEP_SEC)
 
-    calls = fetched + empty + failed
+    calls = fetched + refreshed + empty + failed
     return {
         "ok": True,
         "operation": operation,
         "fetched": fetched,
+        "refreshed": refreshed,          # 낡아서 다시 받은 곳
+        "stale": len(stale_ids),         # 시작할 때 낡아 있던 곳
         "skipped": skipped,
         "empty": empty,
         "failed": failed,
         "stopped": stopped,
         "avg_sec": round(elapsed / calls, 3) if calls else None,
         # 이미 받았지만 대기열에서 빠진 곳(끝난 축제)이 있어, 대기열에 있는 것만 센다.
-        "remaining": sum(1 for p in queue if p["contentid"] not in done) - fetched - empty,
+        "remaining": waiting - fetched - empty,
     }
 
 

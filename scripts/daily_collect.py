@@ -91,7 +91,7 @@ def main():
         print(f"  목록에 반영       수정 {sum(sync['changed'].values())}곳 {sync['changed']} · 새 장소 {sum(sync['added'].values())}곳")
     if queue.get("ok"):
         print(f"  대기열            {queue['count']}곳  (비표출 {queue.get('excluded_hidden', '?')}곳 제외)")
-    print(f"  {'':<18}{'오늘 받음':>8}{'실패':>6}{'남은 곳':>9}{'남은 일수':>9}{'서버 남은 한도':>12}")
+    print(f"  {'':<18}{'새로 받음':>8}{'다시 받음':>8}{'실패':>6}{'남은 곳':>9}{'남은 일수':>9}{'서버 남은 한도':>12}")
     keys = {"detailCommon2": "detailCommon2", "detailIntro2": "detailIntro2", "detailWithTour2": "KorWithService2/detailWithTour2"}
     for label, op in (("소개글", "detailCommon2"), ("휴무일", "detailIntro2"), ("무장애", "detailWithTour2")):
         d = detail[op]
@@ -99,7 +99,7 @@ def main():
             print(f"  {label:<18}{'실패':>8}")
             continue
         got, left = d["fetched"] + d["empty"], d["remaining"]
-        print(f"  {label:<18}{got:>10}{d['failed']:>8}{left:>11}{math.ceil(left / per_day):>11}{str(remaining.get(keys[op], '?')):>14}")
+        print(f"  {label:<18}{got:>10}{d['refreshed']:>10}{d['failed']:>8}{left:>11}{math.ceil(left / per_day):>11}{str(remaining.get(keys[op], '?')):>14}")
         if "실패로 중단" in d["stopped"]:
             print(f"    ↳ {d['stopped']}")
     if places.get("ok"):
