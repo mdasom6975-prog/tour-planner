@@ -9,11 +9,8 @@ import random
 from pathlib import Path
 
 import config
-from rag.bm25 import Bm25Index
-from rag.dense import DenseIndex
+from eval.searchers import make_searchers
 from rag.filters import is_visible
-from rag.hybrid import HybridIndex
-from rag.rerank import Reranker
 
 ROOT = Path(__file__).resolve().parent.parent
 SET_PATH = ROOT / "eval" / "retrieval_set.jsonl"
@@ -61,18 +58,7 @@ def build_pool(depth: int | None = None, encoder=None, scorer=None) -> dict:
     questions, places = _read(SET_PATH), _read(places_path)
     by_id = {p["id"]: p for p in places}
 
-    # 왜: Retriever 를 쓰지 않고 네 검색기를 직접 조립한다. 단계별 결과가 따로 필요하고, 벡터 폴더를 평가용으로 바꿔야 실제 색인을 건드리지 않는다. 어디: 준비.
-    # 교안: RAG 실습1 Q7 — BM25 / Dense / Hybrid / +Rerank 네 가지를 같은 질문으로 돌려 비교하던 구성.
-    bm25 = Bm25Index(places)
-    dense = DenseIndex(places, index_dir=ROOT / config.EVAL_INDEX_DIR, encoder=encoder)
-    hybrid = HybridIndex(bm25, dense)
-    reranker = Reranker(hybrid, places, scorer=scorer)
-    searchers = {
-        "bm25": lambda q, **kw: bm25.search(q, k=depth, **kw),
-        "dense": lambda q, **kw: dense.search(q, k=depth, **kw),
-        "hybrid": lambda q, **kw: hybrid.search(q, k=depth, **kw),
-        "rerank": lambda q, **kw: reranker.search(q, k=depth, enabled=True, **kw),
-    }
+    searchers, dense = make_searchers(places, encoder=encoder, scorer=scorer)   # 조립은 eval/searchers.py — 채점과 같은 검색기를 쓴다
 
     candidates, sources, rules, failed, sizes, no_answer = [], [], [], [], {}, 0
     for q in questions:
@@ -88,7 +74,7 @@ def build_pool(depth: int | None = None, encoder=None, scorer=None) -> dict:
         # 교안: 직접 대응 없음. 한계 — 네 검색기가 모두 놓친 정답은 후보에 없어 Recall 이 실제보다 높게 나올 수 있다.
         ranks = {}
         for name, search in searchers.items():
-            r = search(q["query"], region=q["region"], today=q["today"])
+            r = search(q["query"], depth, region=q["region"], today=q["today"])
             if not r["ok"]:
                 failed.append({"qid": q["id"], "searcher": name, "reason": r["reason"]})
                 continue
