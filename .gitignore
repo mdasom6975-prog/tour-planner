@@ -9,3 +9,4 @@ data/index/
 runs/
 .idea/
 data/processed/
+data/eval/
