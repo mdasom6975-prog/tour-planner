@@ -110,3 +110,11 @@ EVAL_RERANK_CAND_GRID = [20, 30]
 EVAL_EMBED_ALT = "text-embedding-3-small"   # 임베딩 모델 비교(3-5b)의 상대. OpenAI API 라 본문과 질문이 밖으로 나간다
 EARTH_RADIUS_KM = 6371.0   # 직선거리 계산에 쓰는 지구 반지름(평균값)
 SNIPPET_CHARS = 200        # search_places 가 돌려주는 소개 발췌 길이. 요약하지 않고 원문 앞부분을 그대로 자른다 (PRD 11번 저작권)
+
+# --- 날씨 (4-4) -----------------------------------------------------------
+# 왜: 바깥 API 의 주소 · 대기 시간 · 예보 범위를 한 곳에 둔다. 어디: tools/weather.py.
+# 교안: 3일차 day3_tools.py 의 get_weather 와 같은 Open-Meteo(키 없음). 눈(snowfall_sum)은 "비나 눈이 오면 갈 곳" 요구로 추가했다.
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_DAILY = "temperature_2m_max,temperature_2m_min,precipitation_probability_max,snowfall_sum"
+WEATHER_TIMEOUT_SEC = 10
+WEATHER_FORECAST_DAYS = 16   # 오늘을 포함해 예보가 나오는 일수
