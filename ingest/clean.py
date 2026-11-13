@@ -146,6 +146,34 @@ def _load(name: str) -> dict:
     return {r["contentid"]: r for r in rows}
 
 
+DETAIL_TEXT_KEYS = ("overview", "homepage", "rest_text", "hours_text", "contact", "parking", "extra")
+DETAIL_REST_KEYS = ("rest_status", "rest_weekdays", "rest_note")
+
+
+def detail_fields(type_id: str, common_item: dict | None, intro_item: dict | None) -> dict:
+    """상세 응답 두 건(소개글 · 소개정보)을 우리 칸 이름으로 바꾼다. 저장분 정제와 실시간 재확인이 같이 쓴다."""
+    # 왜: 같은 휴무일 문장을 정제와 실시간 도구가 따로 읽으면 두 곳의 해석이 어긋난다. 해석을 한 곳에 둔다. 어디: build_places · tools/places.get_place_detail.
+    # 교안: 4일차 PRD "도시 → 통화 표(코드)" — 유형별 항목 이름은 FIELD_MAP 표가 정한다. 모르는 유형은 호출하는 쪽이 먼저 거른다.
+    fmap = FIELD_MAP[type_id]
+    c, i = common_item or {}, intro_item or {}
+    out = {
+        "overview": _text(c.get("overview")),
+        "homepage": _homepage(c.get("homepage")),
+        "rest_text": _text(i.get(fmap["rest"])) if fmap["rest"] else "",
+        "hours_text": _text(i.get(fmap["hours"])) if fmap["hours"] else "",
+        "contact": _text(i.get(fmap["contact"])) if fmap["contact"] else "",
+        "parking": _text(i.get(fmap["parking"])) if fmap["parking"] else "",
+        "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
+    }
+    # 왜: 검증기가 "이 요일에 가도 되는가" 를 코드로 판정하려면 문장이 아닌 값이 필요하다. 어디: 6단계 검증기의 입력.
+    # 교안: "숫자와 사실 판정은 코드가". 축제는 휴무일 대신 행사 기간으로 검증하므로 해당 없음으로 둔다.
+    if fmap["rest"]:
+        out.update(parse_rest(out["rest_text"]))
+    else:
+        out.update({"rest_status": "not_applicable", "rest_weekdays": [], "rest_note": False})
+    return out
+
+
 def build_places() -> dict:
     """성공: {"ok": True, "count", "by_type", "bad_coords", "hidden", "showflag_unknown", "access", "pet", "path"} / 실패: {"ok": False, "reason"}"""
     # 왜: 세 파일 중 하나라도 없으면 합칠 수 없다. 어디: 함수 맨 앞의 입력 검사.
@@ -178,7 +206,7 @@ def build_places() -> dict:
             fmap = FIELD_MAP.get(type_id)
             if fmap is None:
                 continue
-            c, i = common[cid]["data"] or {}, intro[cid]["data"] or {}
+            detail = detail_fields(type_id, common[cid]["data"], intro[cid]["data"])
             lat, lon = _coord(item)
             bad_coords += lat is None
             modified = item.get("modifiedtime", "")
@@ -195,13 +223,7 @@ def build_places() -> dict:
                 "lon": lon,
                 "image": item.get("firstimage", ""),
                 "modified": f"{modified[:4]}-{modified[4:6]}-{modified[6:8]}" if len(modified) >= 8 else "",
-                "overview": _text(c.get("overview")),
-                "homepage": _homepage(c.get("homepage")),
-                "rest_text": _text(i.get(fmap["rest"])) if fmap["rest"] else "",
-                "hours_text": _text(i.get(fmap["hours"])) if fmap["hours"] else "",
-                "contact": _text(i.get(fmap["contact"])) if fmap["contact"] else "",
-                "parking": _text(i.get(fmap["parking"])) if fmap["parking"] else "",
-                "extra": {k: _text(i.get(src)) for k, src in fmap["extra"].items() if _text(i.get(src))},
+                **{k: detail[k] for k in DETAIL_TEXT_KEYS},   # overview · homepage · rest_text · hours_text · contact · parking · extra
                 "showflag": sync.get(cid, {}).get("showflag") or "",   # "1" 표출 · "0" 비표출 · "" 모름
                 "access": _access(access.get(cid)),   # {"이동": {"주차": "…"}, "시각": {…}, …} · 빈 사전은 정보 없음
                 "pet": _pet(pet.get(cid)),            # {"범위": "…", "견종": "…", …} · 빈 사전은 정보 없음
@@ -211,12 +233,10 @@ def build_places() -> dict:
             counts["pet"] += bool(places[-1]["pet"])
             flags[places[-1]["showflag"]] = flags.get(places[-1]["showflag"], 0) + 1
             places[-1]["search_text"] = build_search_text(places[-1])
-            # 왜: 검증기가 "이 요일에 가도 되는가" 를 코드로 판정하려면 문장이 아닌 값이 필요하다. 어디: 6단계 검증기의 입력.
-            # 교안: "숫자와 사실 판정은 코드가". 축제는 휴무일 대신 행사 기간으로 검증하므로 해당 없음으로 둔다.
-            if fmap["rest"]:
-                places[-1].update(parse_rest(places[-1]["rest_text"]))
-            else:
-                places[-1].update({"rest_status": "not_applicable", "rest_weekdays": [], "rest_note": False})
+            places[-1].update({k: detail[k] for k in DETAIL_REST_KEYS})   # rest_status · rest_weekdays · rest_note
+            # 왜: 실시간 재확인이 실패해 저장분으로 대신할 때 "○월 ○일 기준" 이라고 말하려면 받은 날짜가 필요하다. 둘 중 더 오래된 날을 쓴다. 어디: get_place_detail(4-5b).
+            # 교안: PRD 9번 "저장과 실시간의 역할". modified 는 관광공사가 고친 날이라 뜻이 다르다.
+            places[-1]["fetched"] = min(common[cid].get("collected_at", ""), intro[cid].get("collected_at", ""))
             by_type[config.DETAIL_TYPES[type_id]] = by_type.get(config.DETAIL_TYPES[type_id], 0) + 1
 
     # 왜: 원본에서 계산해 통째로 다시 쓰면 몇 번 실행해도 결과가 같다. 어디: 저장.
