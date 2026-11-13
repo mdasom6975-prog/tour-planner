@@ -120,3 +120,9 @@ WEATHER_DAILY = "temperature_2m_max,temperature_2m_min,precipitation_probability
 WEATHER_TIMEOUT_SEC = 5      # 평소의 7배쯤. 한 번 더 시도하므로 서버가 죽었을 때 최대 10초를 기다린다
 WEATHER_RETRIES = 1          # 연결 실패 · 시간 초과 · 서버 오류(5xx)일 때 다시 시도하는 횟수
 WEATHER_FORECAST_DAYS = 16   # 오늘을 포함해 예보가 나오는 일수
+
+# --- 로그 (L-1) -----------------------------------------------------------
+# 왜: 프로그램에 무슨 일이 있었는지(서버 장애 · 다시 시도 · 예외)를 날짜별 파일로 남긴다. 질문 한 건의 단계를 남기는 실행 기록(runs/)과는 다른 것이다. 어디: harness/logs.py.
+# 교안: 직접 대응 없음. 2026-11-13 날씨 서버가 20분 죽었을 때 남은 기록이 없어서 넣었다.
+LOG_DIR = "logs"           # logs/날짜/debug.log (전부) · logs/날짜/error.log (ERROR 이상)
+LOG_MAX_CHARS = 1000       # 한 줄에 적는 글자 수 상한. 소개글 · 질문 전문이 통째로 남지 않게 한다

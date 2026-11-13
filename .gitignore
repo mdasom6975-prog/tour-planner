@@ -11,3 +11,4 @@ runs/
 data/processed/
 data/eval/
 eval/pool/
+logs/
