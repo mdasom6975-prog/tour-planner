@@ -57,6 +57,8 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 교안: 3일차 Part2 "도구는 한 가지 일만" 을 지키면서 인자로 대상을 바꾼다. 기본값은 기존 서비스라 기존 호출은 그대로다.
     root, default_service = config.TOURAPI_BASE.rsplit("/", 1)
     service = service or default_service
+    # 서비스마다 주소가 따로 정해져 있으면 그것을 쓰고, 없으면 기본 주소의 윗 경로에 서비스 이름을 붙인다(config.TOURAPI_SERVICE_BASES).
+    base = config.TOURAPI_BASE if service == default_service else config.TOURAPI_SERVICE_BASES.get(service) or f"{root}/{service}"
     usage_key = operation if service == default_service else f"{service}/{operation}"
 
     # 왜: 키가 없으면 호출해 봐야 실패하므로 한도를 쓰기 전에 걸러 낸다. 어디: 함수 맨 앞.
@@ -107,7 +109,7 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 왜: 네트워크 오류로 수집 전체가 죽지 않게 오류를 결과로 바꾼다. 어디: 실제 HTTP 호출.
     # 교안: 3일차 Part2 도구 설계 5조건 "에러도 결과로" / get_weather 의 except → {'error': ...}.
     try:
-        r = requests.get(f"{root}/{service}/{operation}", params=query, timeout=15)
+        r = requests.get(f"{base}/{operation}", params=query, timeout=15)
     except requests.RequestException as e:
         return _fail(usage_key, f"연결 실패: {type(e).__name__}")
 

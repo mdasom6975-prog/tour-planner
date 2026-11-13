@@ -17,6 +17,15 @@ JUDGE_MODEL = "anthropic:claude-haiku-5-5"
 
 # --- TourAPI -------------------------------------------------------------
 TOURAPI_BASE = os.getenv("TOURAPI_BASE") or "https://apis.data.go.kr/B551011/KorService2"
+# 왜: 활용신청 화면마다 End Point 주소가 달라 서비스별로 따로 받는다(2026-11-13 사용자가 .env 에 정리). 어디: ingest/tourapi.py 의 call.
+# 교안: 직접 대응 없음. 이름의 대소문자는 .env 에 적힌 그대로(With)이고, 모두 대문자로 적은 경우도 받는다.
+TOURAPI_WITH_BASE = os.getenv("TOURAPI_With_BASE") or os.getenv("TOURAPI_WITH_BASE") or "https://apis.data.go.kr/B551011/KorWithService2"
+TOURAPI_PET_BASE = os.getenv("TOURAPI_PET_BASE") or "https://apis.data.go.kr/B551011/KorPetTourService2"
+# 서비스 이름 → 주소. 여기 없는 서비스 이름은 TOURAPI_BASE 의 윗 주소에 이름을 붙여 쓴다.
+TOURAPI_SERVICE_BASES = {"KorWithService2": TOURAPI_WITH_BASE, "KorPetTourService2": TOURAPI_PET_BASE}
+# 기상청(공공데이터포털 같은 키 TOURAPI_KEY). 단기예보는 가까운 날(오늘~3일 뒤), 중기예보는 4~10일 뒤.
+KMA_SHORT_BASE = os.getenv("KMA_SHORT_BASE") or "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
+KMA_MID_BASE = os.getenv("KMA_MID_BASE") or "https://apis.data.go.kr/1360000/MidFcstInfoService"
 # 왜: TourAPI 는 지역을 이름이 아니라 법정동 코드로 거른다. 어디: 수집(ingest)의 조회 조건.
 # 교안: 4일차 PRD 의 "도시 → 통화 표(코드)" — LLM 이 추측하지 않게 값을 표로 고정하는 방식.
 # 값은 2026-11-11 실제 응답에서 읽었다. 예전 areaCode(6/32/39)는 일부 장소에만 붙어 있어 쓰지 않는다
