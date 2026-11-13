@@ -62,8 +62,8 @@ def test_충분하면_재시도_없이_다음으로_간다():
     path, out, _ = run(h)
     assert path[:5] == ["parse_request", "retrieve", "grade_documents", "fetch_context", "draft_course"]
     assert "transform_query" not in path and out["retries"].get("search", 0) == 0
-    assert [s["types"] for s in h.searches] == [config.SIGHT_TYPES, config.FOOD_TYPES]   # 가볼 곳 · 음식점 두 번
-    assert {c["kind"] for c in out["candidates"]} == {"sight", "food"}
+    assert [s["types"] for s in h.searches] == [config.SIGHT_TYPES, config.FOOD_TYPES, config.INDOOR_TYPES]   # 가볼 곳 · 음식점 · 실내(부가 코스) 세 번
+    assert {c["kind"] for c in out["candidates"]} == {"sight", "food", "indoor"}
 
 
 def test_부족하면_질의를_고쳐_다시_찾고_통과한_후보는_남긴다():
@@ -72,8 +72,8 @@ def test_부족하면_질의를_고쳐_다시_찾고_통과한_후보는_남긴�
     path, out, _ = run(h)
     assert path.count("transform_query") == 1 and path.count("retrieve") == 2
     assert out["retries"]["search"] == 1
-    assert [s["query"] for s in h.searches][:2] == ["강릉", "강릉"]
-    assert [s["query"] for s in h.searches][2:] == ["바다 전망 산책"] * 2   # 고친 질의로 다시 찾았다
+    assert [s["query"] for s in h.searches][:3] == ["강릉"] * 3
+    assert [s["query"] for s in h.searches][3:] == ["바다 전망 산책"] * 3   # 고친 질의로 다시 찾았다
     assert out["query"] == "바다 전망 산책"
 
 
@@ -182,3 +182,10 @@ def test_주소가_없으면_시군_조건에서_빠진다():
 def test_지역_안의_시군_이름을_모은다():
     ps = [place("전북특별자치도 전주시 A"), place("전북특별자치도 군산시 B"), {**place("서울특별시 종로구 C"), "region": "서울"}]
     assert areas_in(ps, "전북") == {"전주시", "군산시"}
+
+
+def test_실내_후보는_충분한가_판정에_세지_않는다():
+    # 가볼 곳 · 음식점 검색은 비고 실내 검색만 결과가 있어도 포기 기준은 그대로다
+    h = Harness(search=lambda types: {"ok": True, "results": good_results(types) if types == config.INDOOR_TYPES else []})
+    path, out, _ = run(h)
+    assert path[-1] == "abstain" and out["grade"]["have"] == {"sight": 0, "food": 0}

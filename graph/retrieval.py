@@ -12,6 +12,9 @@ from graph.state import retries_of
 from harness.trace import Trace
 
 KINDS = {"sight": config.SIGHT_TYPES, "food": config.FOOD_TYPES}
+# 왜: 비 · 눈이 올 때 갈 실내 후보(부가 코스)는 취향 검색에 잘 잡히지 않아(강릉 "바다 산책" 20곳 중 문화시설 0곳) 문화시설만 따로 한 번 더 찾는다(2026-11-13 결정). 어디: retrieve.
+# 교안: 직접 대응 없음. 충분한가 판정(KINDS)에는 세지 않아 포기 기준은 그대로다.
+SEARCH_KINDS = {**KINDS, "indoor": config.INDOOR_TYPES}
 KIND_NAME = {"sight": "가볼 곳", "food": "음식점"}
 TAG = re.compile(r"</?\s*(?:사용자\s*입력|후보\s*장소)\s*>")
 MAX_QUERY_CHARS = 100
@@ -60,7 +63,7 @@ def retrieve_update(search, areas: dict | None = None):
         area, notes = _area_for(req, areas)
         found = {c["id"]: c for c in state.get("candidates", [])}   # 앞선 판정을 통과한 후보는 유지한다
         error = None
-        for kind, types in KINDS.items():
+        for kind, types in SEARCH_KINDS.items():
             got = search(query, region=req.get("region"), types=types, area=area)
             if not got.get("ok"):
                 error = got.get("reason", "검색 실패")
