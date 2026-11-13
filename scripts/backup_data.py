@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 import config
 
 # 원본 · 정제본 · 벡터. runs/(실행 기록)는 다시 만들 수 있어 넣지 않는다.
-FOLDERS = ("data/raw", "data/processed", "data/index")
+FOLDERS = ("data/raw", "data/processed", "data/index", "data/eval")   # data/eval: 평가용 데이터 사본과 벡터. 잃으면 기준선을 다시 잴 수 없다
 
 
 def _gh(*args: str) -> dict:
