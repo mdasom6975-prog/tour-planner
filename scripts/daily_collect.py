@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
+from harness.logs import get_logger, setup_logging
 from ingest.apply_sync import apply_sync
 from ingest.clean import build_places
 from ingest.collect_detail import collect_detail
@@ -46,6 +47,11 @@ def sync_all() -> dict:
 
 
 def main():
+    # 왜: 매일 수집에서 어느 단계가 언제 실패했는지를 화면 출력만이 아니라 파일로 남긴다. 어디: 수집 시작과 단계마다.
+    # 교안: 직접 대응 없음 (L-2). 화면 출력(print)은 그대로 두고 로그를 더한다.
+    setup_logging()
+    log = get_logger("scripts.daily_collect")
+    log.info("매일 수집 시작")
     started = time.perf_counter()
     failed = []
 
@@ -58,8 +64,10 @@ def main():
         if not result.get("ok"):
             failed.append(name)
             print(f"[실패] {name}: {result.get('reason')}")
+            log.error("단계 실패 %s: %s", name, result.get("reason"))
         else:
             print(f"[완료] {name} ({took:.0f}초)")
+            log.info("단계 완료 %s (%.0f초)", name, took)
         return result
 
     # 순서에 뜻이 있다: 표출 여부 · 축제 목록 → 그것을 반영한 대기열 → 대기열대로 상세 수집 → 받은 것을 정제.
@@ -108,6 +116,7 @@ def main():
     print(f"  수집 마감         2026-11-20 (PRD 4번)")
     if failed:
         print(f"\n실패한 단계: {failed}")
+    log.info("매일 수집 끝 (%.0f초) 실패한 단계 %s · 서버 남은 한도 %s", time.perf_counter() - started, failed, remaining)
     print("=" * 62)
     sys.exit(1 if failed else 0)
 

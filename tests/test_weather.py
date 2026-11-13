@@ -144,3 +144,26 @@ def test_잘못된_요청은_다시_부르지_않는다():
     with pytest.raises(requests.HTTPError):
         fetch_open_meteo(35.1, 129.0, "2026-11-14", "2026-11-14", get=get)
     assert get.calls == 1
+
+
+class FakeLog:
+    def __init__(self):
+        self.levels = []
+
+    def __getattr__(self, level):
+        return lambda *args, **kwargs: self.levels.append(level)
+
+
+def test_다시_시도와_최종_실패가_로그에_남는다(monkeypatch):
+    fake_log = FakeLog()
+    monkeypatch.setattr("tools.weather.log", fake_log)
+    get = FakeGet(*[requests.Timeout("느림")] * 2)
+    get_weather(*BUSAN, ["2026-11-14"], today=TODAY, fetch=lambda *a: fetch_open_meteo(*a, get=get))
+    assert fake_log.levels == ["warning", "warning", "error"]   # 시도 두 번의 경고, 끝내 실패한 오류
+
+
+def test_성공하면_로그를_남기지_않는다(monkeypatch):
+    fake_log = FakeLog()
+    monkeypatch.setattr("tools.weather.log", fake_log)
+    get_weather(*BUSAN, ["2026-11-14"], fetch=FakeFetch(ROWS), today=TODAY)
+    assert fake_log.levels == []

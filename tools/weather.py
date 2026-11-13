@@ -6,7 +6,10 @@ import time
 from datetime import date, timedelta
 
 import config
+from harness.logs import get_logger
 from tools.geo import _point
+
+log = get_logger("tools.weather")
 
 SOURCE = "Open-Meteo"
 
@@ -28,6 +31,7 @@ def fetch_open_meteo(lat: float, lon: float, start: str, end: str, get=None) -> 
             error = RuntimeError(f"HTTP {res.status_code}")
         except (requests.ConnectionError, requests.Timeout) as e:
             error = e
+        log.warning("날씨 서버 응답 없음 (시도 %d/%d): %s", attempt + 1, config.WEATHER_RETRIES + 1, type(error).__name__)
         if attempt == config.WEATHER_RETRIES:
             raise error
 
@@ -65,6 +69,7 @@ def get_weather(lat, lon, dates: list, *, fetch=None, today: str | None = None) 
                     ("temp_max", "temperature_2m_max"), ("temp_min", "temperature_2m_min"),
                     ("rain_prob", "precipitation_probability_max"), ("snow_cm", "snowfall_sum"))}
         except Exception as e:   # 시간 초과 · 서버 오류 · 깨진 응답. 그래프가 멈추지 않게 결과로 돌려준다.
+            log.error("날씨를 가져오지 못했습니다: %s (%s ~ %s)", type(e).__name__, askable[0], askable[-1])
             return {"ok": False, "reason": f"날씨를 가져오지 못했습니다: {type(e).__name__}"}
 
     # 왜: 받지 못한 날을 평균이나 어제 값으로 채우면 틀린 날씨로 코스를 짜게 된다. 없는 날은 없다고 표시만 한다. 어디: 날짜별 정리.

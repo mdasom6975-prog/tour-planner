@@ -10,6 +10,9 @@ from pathlib import Path
 import requests
 
 import config
+from harness.logs import get_logger
+
+log = get_logger("ingest.tourapi")
 
 # 왜: 오늘 몇 번 불렀는지 프로그램을 껐다 켜도 기억하려고 파일에 적는다. 어디: 한도 검사.
 # 교안: 3일차 04 일정비서가 data/calendar.json 에 상태를 저장하던 방식(_load_cal/_save_cal).
@@ -33,6 +36,13 @@ def _save_usage(usage: dict) -> None:
     USAGE_PATH.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _fail(usage_key: str, reason: str, level: str = "warning", **more) -> dict:
+    # 왜: 실패를 결과로 돌려주면서 같은 내용을 로그에도 남긴다. 언제 어떤 오퍼레이션이 왜 실패했는지 나중에 볼 수 있다. 어디: call 의 모든 실패 경로.
+    # 교안: 직접 대응 없음 (L-2). 요청 주소는 적지 않는다 — 키가 주소에 붙어 있다. 로그 장치도 키 모양을 한 번 더 가린다.
+    getattr(log, level)("%s 실패: %s", usage_key, reason)
+    return {"ok": False, **more, "reason": reason}
+
+
 def call(operation: str, params: dict | None = None, today: str | None = None, service: str | None = None, margin: int | None = None) -> dict:
     """TourAPI 오퍼레이션을 한 번 호출한다.
 
@@ -53,7 +63,7 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 교안: 2일차 Part4 "비밀은 .env 에만" — 키는 코드 · 지시문 · 로그에 쓰지 않는다.
     key = os.getenv("TOURAPI_KEY")
     if not key:
-        return {"ok": False, "reason": ".env 에 TOURAPI_KEY 가 없습니다"}
+        return _fail(usage_key, ".env 에 TOURAPI_KEY 가 없습니다", "error")
 
     # 왜: 한도를 넘기면 그날 수집이 전부 막히므로 보내기 전에 코드가 막는다. 어디: 요청 직전.
     # 교안: 3일차 Part4 "안전장치는 프롬프트가 아니라 코드에" / day3_tools.run_agent 의 max_rounds.
@@ -77,7 +87,7 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
         detail = f"우리 기록 {used}/{budget}"
     if blocked:
         # "limit": True 는 부르는 쪽이 "실패" 와 "오늘 분량 끝" 을 글자가 아닌 값으로 구분하게 해 준다.
-        return {"ok": False, "limit": True, "reason": f"오늘 {usage_key} 호출 한도 도달 ({detail}). 내일 이어서 받습니다"}
+        return _fail(usage_key, f"오늘 {usage_key} 호출 한도 도달 ({detail}). 내일 이어서 받습니다", "info", limit=True)
 
     # 왜: 매번 똑같이 붙는 값은 함수가 붙여야 호출하는 쪽이 조건만 신경 쓴다. 어디: 모든 오퍼레이션.
     # 교안: 3일차 day3_tools.get_weather — requests.get(url, params={...}) 로 조건을 넘기던 형태.
@@ -99,7 +109,7 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     try:
         r = requests.get(f"{root}/{service}/{operation}", params=query, timeout=15)
     except requests.RequestException as e:
-        return {"ok": False, "reason": f"연결 실패: {type(e).__name__}"}
+        return _fail(usage_key, f"연결 실패: {type(e).__name__}")
 
     # 왜: 서버가 센 남은 수를 받아 적어 두면 다음 호출의 판단 근거가 되고, 파일만 열어도 남은 한도를 알 수 있다. 어디: 응답 직후.
     # 교안: 12-1 실행 기록 — 추측하지 않고 실제로 관측한 값을 남긴다. 머리말이 없으면 우리 기록 방식으로 남는다.
@@ -116,17 +126,17 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 교안: 2일차 Part4 다층 방어의 "출력 검증"과 같은 생각 — 받은 것을 쓰기 전에 코드로 형식 확인.
     text = r.text.strip()
     if not text.startswith("{"):
-        return {"ok": False, "reason": f"HTTP {r.status_code}, JSON 이 아닌 응답: {text[:150]}"}
+        return _fail(usage_key, f"HTTP {r.status_code}, JSON 이 아닌 응답: {text[:150]}")
 
     # 왜: HTTP 200 이어도 본문의 resultCode 가 실패일 수 있다. 어디: 본문 머리말 검사.
     # 교안: 3일차 get_exchange_rate — 응답은 왔지만 값이 없을 때 {'error': ...} 를 돌려주던 처리.
     data = r.json()
     if "response" not in data:
-        return {"ok": False, "reason": f"HTTP {r.status_code}, 예상과 다른 응답: {text[:150]}"}
+        return _fail(usage_key, f"HTTP {r.status_code}, 예상과 다른 응답: {text[:150]}")
     response = data["response"]
     header = response.get("header", {})
     if header.get("resultCode") != "0000":
-        return {"ok": False, "reason": f"resultCode={header.get('resultCode')} {header.get('resultMsg')}"}
+        return _fail(usage_key, f"resultCode={header.get('resultCode')} {header.get('resultMsg')}")
 
     # 왜: 결과가 0건이면 items 가 빈 문자열, 1건이면 dict 로 오기도 해서 항상 list 로 맞춘다. 어디: 반환 직전.
     # 교안: 직접 대응하는 부분 없음 (TourAPI 응답의 특성). 3일차 도구들이 항상 dict 를 돌려주던 것과 같은 취지.

@@ -11,6 +11,7 @@ from urllib.parse import quote
 import streamlit as st
 
 import config
+from harness.logs import get_logger, setup_logging
 from harness.trace import Trace
 from rag.retriever import PLACES_PATH, Retriever
 
@@ -98,6 +99,9 @@ def answer(question: str, index: Retriever, rerank: bool = True) -> None:
         places = [by_id[r["id"]] for r in result["results"]]
         text = f"{region or '전체 지역'}에서 {len(places)}곳을 찾았습니다. 지금은 검색만 됩니다 (코스 생성은 5단계부터)."
 
+    # 질문 전문은 로그에 적지 않는다. 실행 번호로 runs/ 의 실행 기록과 이어 본다.
+    log = get_logger("app")
+    (log.info if result["ok"] else log.warning)("질문 처리 run=%s 지역=%s 결과=%d곳 ok=%s", trace.run_id, region, len(places), result["ok"])
     st.session_state.messages += [("user", question), ("assistant", text)]
     st.session_state.places = places
     st.session_state.steps = trace.steps
@@ -173,6 +177,7 @@ def draw_trace() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="어디갈래", layout="wide")
+    setup_logging()   # Streamlit 이 스크립트를 다시 돌릴 때마다 불려도 한 번 부른 것과 같다 (harness/logs.py)
     for key, default in (("messages", []), ("places", []), ("steps", []), ("condition", {}), ("pending", None)):
         st.session_state.setdefault(key, default)
 

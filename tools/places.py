@@ -9,6 +9,8 @@ import config
 from harness.logs import get_logger
 from ingest.clean import _text, detail_fields
 
+log = get_logger("tools.places")
+
 FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "modified")
 
 
@@ -20,6 +22,7 @@ def search_places(query: str, region: str | None = None, types: list | None = No
     try:
         found = retriever.search(query, k=k, region=region, types=types, today=today, trace=trace)
     except Exception as e:   # 검색기 안에서 예상 못 한 오류가 나도 그래프가 멈추지 않게 한다
+        log.exception("검색 중 오류 region=%s types=%s", region, types)
         return {"ok": False, "reason": f"검색 중 오류: {type(e).__name__}"}
     if not found["ok"]:
         return {"ok": False, "reason": found["reason"]}
@@ -44,7 +47,6 @@ def search_places(query: str, region: str | None = None, types: list | None = No
 
 
 # --- 실시간 재확인 (4-5b) ---------------------------------------------------
-log = get_logger("tools.places")
 TYPE_ID = {name: code for code, name in config.DETAIL_TYPES.items()}
 BASE_FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "image", "modified")
 DETAIL_FIELDS = ("overview", "homepage", "rest_text", "hours_text", "contact", "parking", "extra", "rest_status", "rest_weekdays", "rest_note")
