@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 import config
 from graph.context import fetch_update
+from graph.course import draft_update, respond_update
 from graph.parse import ask_back_update, parse_update
 from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
 from graph.state import State, retries_of
@@ -77,6 +78,8 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         updates["parse_request"] = parse_update(llm, today, trace)
         updates["grade_documents"] = grade_update(llm, trace)
         updates["transform_query"] = transform_update(llm, trace)
+        updates["draft_course"] = draft_update(llm, trace)   # 코스 칸 채우기(5-5). 쓸 때마다 draft 횟수를 센다
+        updates["respond"] = respond_update
     if weather is not None or festivals is not None:   # 둘 다 없으면 fetch_context 는 비어 있는 뼈대다
         updates["fetch_context"] = fetch_update(weather, festivals, stored, trace)
     if search is not None:   # search 가 없으면 retrieve 는 비어 있는 뼈대다 (후보 없음)

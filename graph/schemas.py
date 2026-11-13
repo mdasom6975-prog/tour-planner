@@ -1,4 +1,6 @@
 """LLM 이 채우는 조건 스키마. 이 칸에 없는 값은 State 로 들어오지 못한다. (PRD F1)"""
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -19,3 +21,25 @@ class Grade(BaseModel):
 
 class NewQuery(BaseModel):
     query: str = Field(description="고쳐 쓴 검색 질의 한 문장")
+
+
+class Slot(BaseModel):
+    slot: Literal["오전", "점심", "오후", "저녁"] = Field(description="하루 칸. 오전·오후는 가볼 곳, 점심·저녁은 음식점")
+    content_id: str = Field(description="후보 장소의 id 를 그대로")
+    reason: str = Field(description="이 장소를 이 자리에 넣은 이유 한 문장")
+
+
+class DayPlan(BaseModel):
+    date: str = Field(description="여행일 YYYY-MM-DD (주어진 날짜 그대로)")
+    slots: list[Slot] = Field(default_factory=list)
+
+
+class Backup(BaseModel):
+    content_id: str = Field(description="부가 코스 후보의 id 를 그대로")
+    reason: str = Field(description="비나 눈이 올 때 가볼 만한 이유 한 문장")
+
+
+class Course(BaseModel):
+    days: list[DayPlan] = Field(default_factory=list)
+    rain_reason: str = Field("", description="비·눈 오는 날을 실내 위주로 짠 이유 한 줄. 그런 날이 없으면 빈 문자열")
+    backup: list[Backup] = Field(default_factory=list, description="비나 눈이 올 때 갈 만한 실내 장소 2~3곳")

@@ -16,6 +16,7 @@ class State(TypedDict, total=False):
     festivals: dict      # fetch_context: 축제(items) · 상설 장기 행사(long_running) · 알림 문장
     rest_table: dict     # fetch_context: {후보 id: {날짜: "closed" | "check"}} (영업일은 적지 않는다)
     course: dict         # draft_course 가 만든 일자별 배치
+    course_error: str    # draft_course 가 쓰지 못했을 때의 오류 이름
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
     answer: dict         # 끝에 나가는 값: 되묻기 · 찾지 못함 · 코스
