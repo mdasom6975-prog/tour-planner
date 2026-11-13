@@ -1,5 +1,5 @@
 """graph/present.py(요약 · 지도 경로 · 내려받기 문서)를 확인한다. Streamlit · 네트워크를 쓰지 않는다. (14번 7단계)"""
-from graph.present import CREDIT, POLICY_URL, export_markdown, excerpt, map_link, route_by_day, shop_link, summary_line, weather_line
+from graph.present import CREDIT, map_view, POLICY_URL, export_markdown, excerpt, map_link, route_by_day, shop_link, summary_line, weather_line
 
 SLOT = {"slot": "오전", "id": "1", "title": "안목해변", "type": "관광지", "addr": "강릉시 창해로", "lat": 37.77, "lon": 128.95, "leg_km": None,
         "facts": ["반려동물 동반 가능(전 구역)", "정보 방금 확인"], "access": [("이동 · 시설", ["접근로: 경사로"])], "reason": "바다 산책"}
@@ -48,3 +48,12 @@ def test_내려받기_문서에_출처와_정책_링크와_기준일이_붙는�
 def test_부가_코스가_없으면_없다고_적는다():
     s = {**STATE, "answer": {**STATE["answer"], "backup": []}}
     assert "- 이 조건에서 실내 후보를 찾지 못했습니다." in export_markdown(s, PLACES, "2026-11-13")
+
+
+def test_지도_중심과_확대는_핀_범위에서_정한다():
+    lat, lon, zoom = map_view(route_by_day(STATE["answer"]))
+    assert (round(lat, 2), round(lon, 3)) == (37.78, 128.93) and zoom == 14    # 위도 0.02 · 경도 0.04도(보정 후 0.03) 범위
+    assert map_view([("2026-11-21", [])]) is None
+    far = [("d", [{"lat": 33.2, "lon": 126.2}, {"lat": 38.0, "lon": 129.4}])]
+    assert map_view(far)[2] == 7                                              # 아주 넓으면 최소 7
+    assert map_view([("d", [{"lat": 37.0, "lon": 127.0}])])[2] == 15          # 한 곳이면 최대 15

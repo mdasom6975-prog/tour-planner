@@ -3,6 +3,7 @@
 사실(이름 · 주소 · 거리 · 날짜 · 휴무)은 respond 가 만든 값을 그대로 옮기고 여기서 새로 판정하지 않는다.
 관광공사 소개글은 고치지 않고 앞부분만 발췌한다(저작권 정책, PRD 11번).
 """
+import math
 from urllib.parse import quote
 
 POLICY_URL = "https://api.visitkorea.or.kr/#/useServiceGuide/2"
@@ -60,6 +61,19 @@ def route_by_day(answer: dict) -> list:
                for i, s in enumerate(d["slots"], 1) if s.get("lat") is not None and s.get("lon") is not None]
         out.append((d["date"], pts))
     return out
+
+
+def map_view(routes: list) -> tuple | None:
+    """모든 핀이 한 화면에 들어오는 (중심 위도, 중심 경도, 확대 단계). 핀이 없으면 None."""
+    # 왜: folium 의 fit_bounds 는 지도 칸 크기를 알기 전에 계산돼 엉뚱한 곳(산 속)으로 확대됐다(2026-11-13 화면 확인). 코드가 중심과 확대를 직접 정한다. 어디: 지도 시작 위치.
+    # 교안: 직접 대응 없음. 지도 폭 약 500px 에 핀 범위가 들어오도록 한 계산: 확대 단계 = log2(560 / 위경도 범위).
+    pts = [(p["lat"], p["lon"]) for _, day in routes for p in day]
+    if not pts:
+        return None
+    lats, lons = [a for a, _ in pts], [b for _, b in pts]
+    lat = (min(lats) + max(lats)) / 2
+    span = max(max(lats) - min(lats), (max(lons) - min(lons)) * math.cos(math.radians(lat)), 0.005)
+    return lat, (min(lons) + max(lons)) / 2, max(7, min(15, int(math.log2(560 / span))))
 
 
 def export_markdown(state: dict, places: dict, as_of: str) -> str:

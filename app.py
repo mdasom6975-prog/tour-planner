@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import config
-from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, map_link, route_by_day, shop_link,
+from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, map_link, map_view, route_by_day, shop_link,
                            summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph
 from harness.logs import get_logger, setup_logging
@@ -151,8 +151,8 @@ def draw_map(answer: dict) -> None:
     routes = [(d, pts) for d, pts in route_by_day(answer) if pts]
     if not routes:
         return
-    every = [(p["lat"], p["lon"]) for _, pts in routes for p in pts]
-    m = folium.Map(location=[sum(a for a, _ in every) / len(every), sum(b for _, b in every) / len(every)], zoom_start=11, control_scale=True)
+    lat, lon, zoom = map_view(routes)
+    m = folium.Map(location=[lat, lon], zoom_start=zoom, control_scale=True)
     for i, (day, pts) in enumerate(routes):
         color = DAY_COLORS[i % len(DAY_COLORS)]
         folium.PolyLine([(p["lat"], p["lon"]) for p in pts], color=color, weight=3, opacity=0.8).add_to(m)
@@ -161,8 +161,7 @@ def draw_map(answer: dict) -> None:
                 (p["lat"], p["lon"]), tooltip=f"{day[5:]} {p['slot']} · {p['title']}",
                 icon=folium.DivIcon(html=f'<div style="background:{color};color:#fff;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;font-weight:700;border:2px solid #fff">{p["n"]}</div>', icon_size=(24, 24), icon_anchor=(12, 12)),
             ).add_to(m)
-    m.fit_bounds([(min(a for a, _ in every), min(b for _, b in every)), (max(a for a, _ in every), max(b for _, b in every))], padding=(30, 30))
-    st_folium(m, height=360, use_container_width=True, returned_objects=[], key="course_map")
+    st_folium(m, height=360, use_container_width=True, returned_objects=[], center=(lat, lon), zoom=zoom, key="course_map")
     st.caption(" · ".join(f":{'red' if i == 0 else 'blue' if i == 1 else 'green'}[● {d[5:]}]" for i, (d, _) in enumerate(routes)) + " — 번호는 방문 순서, 선은 직선 이동입니다(실제 길이 아님)")
 
 
