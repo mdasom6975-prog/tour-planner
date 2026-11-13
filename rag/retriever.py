@@ -32,8 +32,8 @@ class Retriever:
             return cls([json.loads(line) for line in f if line.strip()], **kwargs)
 
     def search(self, query: str, k: int | None = None, region: str | None = None, types: list | None = None,
-               today: str | None = None, trace=None, rerank: bool | None = None) -> dict:
+               today: str | None = None, trace=None, rerank: bool | None = None, area: str | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms", "reranked", ...} / 실패: {"ok": False, "reason"}"""
         # 왜: 바깥에서는 이 함수만 부른다. k 와 재정렬 여부를 비워 두면 config 값을 쓰므로 호출하는 쪽에 숫자가 흩어지지 않는다. 어디: 검색 입구.
         # 교안: 4일차 PRD "도구는 한 가지 일만, 실패도 결과로" — 아래 검색기가 준 {"ok": False, "reason"} 을 그대로 올려 보낸다.
-        return self.reranker.search(query, k=k, region=region, types=types, today=today, trace=trace, enabled=rerank)
+        return self.reranker.search(query, k=k, region=region, types=types, today=today, trace=trace, enabled=rerank, area=area)

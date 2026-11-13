@@ -326,7 +326,9 @@ tour-planner/
 - **진행 중: 5단계 그래프.** 설계가 걸린 단계라 노드마다 설명 → 동의 → 하나씩 만든다
   - **5-1 뼈대 끝남 (2026-11-13):** `graph/state.py` · `graph/build.py`(노드 10개 + 분기 3곳, 안은 비어 있음) · `tests/test_graph_skeleton.py` 4건. `python -m pytest` 111건 통과. 그림은 `docs/graph_5-1.mmd`
   - **5-2 조건 이해 끝남 (2026-11-13):** `graph/schemas.py`(TripRequest) · `graph/parse.py`(parse_request · ask_back) · `graph/llm.py`(make_llm) · `config.MAX_TRIP_DAYS = 3`(임의 값). 가짜 LLM 테스트 13건, `python -m pytest` 124건 통과. **실제 모델 호출은 아직 해 보지 않았다.** 날짜가 없거나 틀려도 진행하고 `request["notes"]`에 사유를 남긴다 (지역 · 일수만 되묻는다). 시 · 군은 `place`에 글자만 뽑고 거르는 기능은 5-3
-  - **다음: 5-3** `retrieve`(시 · 군 거르기 포함) + `grade_documents` + `transform_query` + `abstain`. 이후 5-4 `fetch_context`, 5-5 `draft_course` + `respond`
+  - **5-3 검색 · 판정 · 포기 끝남 (2026-11-13):** `graph/retrieval.py`(retrieve · grade_documents · transform_query · abstain) · `rag/filters.py`에 `area`(시 · 군 거르기)를 넣고 검색 계층 전체에 통과 · `config`에 `PLACES_PER_DAY` · `MEALS_PER_DAY` · `SIGHT_TYPES` · `FOOD_TYPES`. 테스트 14건 추가, `python -m pytest` 139건 통과. **실제 모델 호출 · 실제 검색기로 그래프를 돌려 보지는 않았다.** 실제 `places.jsonl`(2,775곳)에서 시 · 군 거르기만 측정: 전주 110 · 군산 62 · 여수 29 · 서귀포 168 · 강릉 339 · 해운대 74곳, 모두 주소와 일치
+  - **결정 (2026-11-13, 사용자):** ① "찾지 못했습니다"는 재정렬 점수가 아니라 LLM 판정을 통과한 후보 수(가볼 곳 · 음식점 각각 일수×2곳 이상)로 정한다 ② 점수가 낮은 후보를 거르는 점수 컷은 쓰지 않고 LLM 판정만 따른다 ③ `place`가 주소의 시 · 군 · 구와 안 맞으면 거르지 않고 지역 전체로 찾고 `request["notes"]`에 `place_unmatched`를 남긴다. **한계:** "광주"는 주소가 북구 · 동구라서 안 맞아(측정: 0곳) 전남광주 전체로 찾는다
+  - **다음: 5-4** `fetch_context`(날씨 · 축제 · 휴무). 이후 5-5 `draft_course` + `respond`
 - 3단계 결과: 합침+재정렬 nDCG@10 0.863(고름 18건) · 0.824(확인 9건). 설정은 그대로(BGE-m3-ko · 가중치 0.5 · 후보 30). 표와 한계는 `eval/README.md`
 - 4단계 도구: `tools/geo.py`(distance_km) · `tools/places.py`(search_places · get_place_detail) · `tools/festivals.py`(search_festivals) · `tools/weather.py`(get_weather). 모두 평범한 함수이고 바깥 의존은 인자로 받는다
 
@@ -334,14 +336,14 @@ tour-planner/
 
 | 단계 | 정할 것 | 근거 (측정값) |
 | --- | --- | --- |
-| 5 | "찾지 못했습니다" 기준 | 재정렬 1위 점수가 정답 없는 질문에서 0.019 ~ 0.084인데, 정답 있는 질문도 0.026 · 0.068이 나온다. 점수 하나로는 못 가른다 |
-| 5 | 점수가 낮은 후보를 코스 재료로 쓸지 | "부산 낙곱새 맛집"은 2위 0.97 다음 3위가 0.14다 |
+| 5 | ~~"찾지 못했습니다" 기준~~ → **정함(5-3):** LLM 판정 통과 후보 수 | 재정렬 1위 점수가 정답 없는 질문에서 0.019 ~ 0.084인데, 정답 있는 질문도 0.026 · 0.068이 나온다. 점수 하나로는 못 가른다 |
+| 5 | ~~점수가 낮은 후보를 코스 재료로 쓸지~~ → **정함(5-3):** 점수 컷 없이 LLM 판정만 | "부산 낙곱새 맛집"은 2위 0.97 다음 3위가 0.14다 |
 | 5 | 상설 공연을 축제로 소개할지 | `search_festivals`는 거르지 않고 `duration_days`만 준다. 부산 11월 14 ~ 15일 4건 중 2건이 182일 · 365일짜리다 |
 | 5 | 눈 오는 날의 기준 | 비는 강수확률 60%가 있지만 눈(`snow_cm`)은 기준이 없다 |
 | 5 | 날씨를 받지 못한 날의 알림 문장, 부가 코스 2 ~ 3곳 고르기 | F3. `get_weather`는 `unavailable`에 날짜를 준다. 예보는 오늘 포함 16일 |
 | 5 | 실시간 재확인은 코스당 한 번만 | 장소 한 곳 평균 315ms · 조회 2건. 재작성 때마다 다시 부르면 한도가 준다. 20일까지는 하루 40건(코스 2개)뿐이고 나머지는 저장분 |
 | 5 | 반려동물 · 무장애는 칸이 있는 곳만 "가능"이라고 말하기 | `search_places`가 `access` · `pet`을 저장분 그대로 준다 |
-| 5 | 시 · 군 단위 거르기 ("전주 1박 2일") | 4번. 조건 이해 단계에서 다룬다 |
+| 5 | ~~시 · 군 단위 거르기 ("전주 1박 2일")~~ → **끝남(5-3)** | `rag/filters.py` `area` |
 | 6 | 하루를 한 구역에 묶는 규칙, 지역별 거리 기준 | 15번의 보완안 ② · ③. 성산일출봉 – 송악산 직선 67km |
 | 6 | `withdrawn` 장소 빼기, 축제를 `days_in_trip`의 날짜에만 | `get_place_detail` · `search_festivals`의 출력 |
 | 6 | 휴무일의 공휴일 조건, "매월 ○째 요일" | F3 |

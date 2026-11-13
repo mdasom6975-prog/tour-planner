@@ -50,7 +50,13 @@ def test_무장애_반려동물은_저장분_그대로_없으면_빈_dict():
 def test_인자를_검색기에_그대로_넘긴다():
     fake = FakeRetriever(_ok())
     search_places("강릉 카페", region="강릉", types=["음식점"], k=5, retriever=fake, today="2026-11-13", trace="기록장치")
-    assert fake.called == {"query": "강릉 카페", "k": 5, "region": "강릉", "types": ["음식점"], "today": "2026-11-13", "trace": "기록장치"}
+    assert fake.called == {"query": "강릉 카페", "k": 5, "region": "강릉", "types": ["음식점"], "today": "2026-11-13", "trace": "기록장치", "area": None}
+
+
+def test_시군_조건도_검색기에_넘긴다():
+    fake = FakeRetriever(_ok())
+    search_places("전주 한옥", region="전북", area="전주", retriever=fake)
+    assert fake.called["area"] == "전주"
 
 
 def test_결과_0건은_실패가_아니다():

@@ -15,12 +15,12 @@ FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "modified")
 
 
 def search_places(query: str, region: str | None = None, types: list | None = None, k: int | None = None, *,
-                  retriever, today: str | None = None, trace=None) -> dict:
+                  retriever, today: str | None = None, trace=None, area: str | None = None) -> dict:
     """성공: {"ok": True, "results": [...], "count", "top_score", "took_ms"} / 실패: {"ok": False, "reason"}"""
     # 왜: 검색기는 준비에 14초 · 모델 2GB 라 한 번 만들어 나눠 쓴다. 도구가 직접 만들지 않고 받아 쓰면 테스트에서 가짜로 바꿀 수 있다. 어디: 인자 retriever · today.
     # 교안: 3일차 Part2 도구 5조건 · 4일차 PRD "외부 의존 주입". day3_tools.py 의 도구가 실패를 dict 로 돌려주던 모양.
     try:
-        found = retriever.search(query, k=k, region=region, types=types, today=today, trace=trace)
+        found = retriever.search(query, k=k, region=region, types=types, today=today, trace=trace, area=area)
     except Exception as e:   # 검색기 안에서 예상 못 한 오류가 나도 그래프가 멈추지 않게 한다
         log.exception("검색 중 오류 region=%s types=%s", region, types)
         return {"ok": False, "reason": f"검색 중 오류: {type(e).__name__}"}

@@ -19,12 +19,28 @@ def check_filters(region: str | None, types: list | None) -> str | None:
     return None
 
 
-def is_visible(place: dict, region: str | None = None, types: list | None = None, today: str | None = None) -> bool:
+def area_of(place: dict) -> str | None:
+    """주소의 둘째 낱말(시 · 군 · 구). 주소가 없거나 한 낱말이면 None."""
+    words = (place.get("addr") or "").split()
+    return words[1] if len(words) > 1 else None
+
+
+def areas_in(places: list, region: str) -> set:
+    """지역 안에 실제로 있는 시 · 군 · 구 이름 모음. place 가 어디와 맞는지 미리 볼 때 쓴다."""
+    return {a for p in places if p["region"] == region and (a := area_of(p))}
+
+
+def is_visible(place: dict, region: str | None = None, types: list | None = None, today: str | None = None,
+               area: str | None = None) -> bool:
     # 왜: 지역 · 유형은 점수가 아니라 조건이다. "강릉" 이 본문에 여러 번 나온 부산 식당이 올라오면 안 된다. 어디: 점수 계산 뒤.
     # 교안: PRD F2 "메타데이터 필터". RAG 실습1 에는 없던 부분으로, 장소 데이터라서 필요하다.
     if region is not None and place["region"] != region:
         return False
     if types and place["type"] not in types:
+        return False
+    # 왜: "전주 1박 2일"은 전북 전체가 아니라 전주만 찾아야 한다. 주소의 둘째 낱말(전주시 · 해운대구)이 area 로 시작하면 통과한다. 어디: 시 · 군 단위 거르기.
+    # 교안: 직접 대응 없음 (PRD 4번 "시 · 군 단위로 거르는 기능"). 메타데이터 필터와 같은 자리에서 점수 계산 뒤에 판정한다.
+    if area is not None and not (area_of(place) or "").startswith(area):
         return False
 
     # 왜: 관광공사가 비표출(showflag 0) 콘텐츠를 노출하지 말라고 요구했다. 여기서 빼면 네 검색기와 화면에 한꺼번에 적용된다. 어디: 모든 검색.

@@ -10,3 +10,12 @@ class TripRequest(BaseModel):
     companions: str | None = Field(None, description="동행(예: 부모님, 아이). 없으면 null")
     preferences: list[str] = Field(default_factory=list, description="취향·바라는 것")
     exclusions: list[str] = Field(default_factory=list, description="빼 달라고 한 것")
+
+
+class Grade(BaseModel):
+    relevant_ids: list[str] = Field(default_factory=list, description="조건에 맞는 후보의 id")
+    reason: str = Field("", description="부족한 점 한 문장")
+
+
+class NewQuery(BaseModel):
+    query: str = Field(description="고쳐 쓴 검색 질의 한 문장")

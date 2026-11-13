@@ -95,10 +95,10 @@ class DenseIndex:
         return emb, stats
 
     def search(self, query: str, k: int = 10, region: str | None = None, types: list | None = None,
-               today: str | None = None, trace=None) -> dict:
+               today: str | None = None, trace=None, area: str | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms"} / 실패: {"ok": False, "reason"}  (BM25 와 같은 모양)"""
         started = time.perf_counter()
-        result = self._search(query, k, region, types, today)
+        result = self._search(query, k, region, types, today, area)
         result["took_ms"] = round((time.perf_counter() - started) * 1000, 2)
 
         # 왜: 검색 1회가 실행 기록 1줄이 된다. BM25 와 같은 형식으로 남겨 화면과 평가가 두 검색을 같은 방식으로 읽는다. 어디: 검색 끝.
@@ -106,11 +106,11 @@ class DenseIndex:
         if trace is not None:
             output = {"count": len(result["results"]), "top": [r["title"] for r in result["results"]]} if result["ok"] else {"reason": result["reason"]}
             trace.record("search_dense", "tool",
-                         input={"query": query, "k": k, "region": region, "types": types, "today": today, "model": self.model_name},
+                         input={"query": query, "k": k, "region": region, "types": types, "area": area, "today": today, "model": self.model_name},
                          output=output, ok=result["ok"], took_ms=result["took_ms"])
         return result
 
-    def _search(self, query: str, k: int, region: str | None, types: list | None, today: str | None) -> dict:
+    def _search(self, query: str, k: int, region: str | None, types: list | None, today: str | None, area: str | None = None) -> dict:
         problem = check_filters(region, types)
         if problem:
             return {"ok": False, "reason": problem}
@@ -126,7 +126,7 @@ class DenseIndex:
         results = []
         for i in np.argsort(-scores):
             place = self.places[i]
-            if not is_visible(place, region, types, today):
+            if not is_visible(place, region, types, today, area):
                 continue
             results.append({
                 "id": place["id"],

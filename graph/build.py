@@ -9,7 +9,8 @@ from langgraph.graph import END, START, StateGraph
 
 import config
 from graph.parse import ask_back_update, parse_update
-from graph.state import State
+from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
+from graph.state import State, retries_of
 from harness.trace import Trace
 
 NODES = [
@@ -18,8 +19,7 @@ NODES = [
 ]
 
 
-def _retries(state: State) -> dict:
-    return {"search": 0, "draft": 0, **state.get("retries", {})}
+_retries = retries_of
 
 
 # --- 분기: State 값만 보고 정한다 -------------------------------------------
@@ -63,14 +63,20 @@ def _count(key: str):
     return update
 
 
-def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, today: str | None = None):
+def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, today: str | None = None,
+                search=None, areas: dict | None = None):
     """노드를 잇는다. trace · llm · today 는 바깥에서 받는다(평가 · 테스트가 가짜로 바꿔 끼운다)."""
     trace = trace or Trace(save=False)
     today = today or date.today().isoformat()
     g = StateGraph(State)
-    updates = {"transform_query": _count("search"), "draft_course": _count("draft"), "ask_back": ask_back_update}
+    updates = {"transform_query": _count("search"), "draft_course": _count("draft"), "ask_back": ask_back_update,
+               "abstain": abstain_update}
     if llm is not None:   # llm 이 없으면 parse_request 는 뼈대(5-1)처럼 State 의 request 를 그대로 쓴다
         updates["parse_request"] = parse_update(llm, today, trace)
+        updates["grade_documents"] = grade_update(llm, trace)
+        updates["transform_query"] = transform_update(llm, trace)
+    if search is not None:   # search 가 없으면 retrieve 는 비어 있는 뼈대다 (후보 없음)
+        updates["retrieve"] = retrieve_update(search, areas)
     for name in NODES:
         g.add_node(name, _make_node(name, trace, updates.get(name)))
     # fetch_context 의 날씨 · 축제 · 휴무 병렬 처리는 5-4에서 안쪽에 넣는다.

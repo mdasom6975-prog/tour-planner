@@ -50,10 +50,10 @@ class Bm25Index:
             return cls([json.loads(line) for line in f if line.strip()])
 
     def search(self, query: str, k: int = 10, region: str | None = None, types: list | None = None,
-               today: str | None = None, trace=None) -> dict:
+               today: str | None = None, trace=None, area: str | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms"} / 실패: {"ok": False, "reason"}"""
         started = time.perf_counter()
-        result = self._search(query, k, region, types, today)
+        result = self._search(query, k, region, types, today, area)
 
         # 왜: 검색 1회가 실행 기록 1줄이 된다. 기록 장치를 넘기지 않으면 아무것도 남기지 않아 기존 코드는 그대로 동작한다. 어디: 검색 끝.
         # 교안: PRD 12-1 실행 기록. 검색기는 기록 장치를 "받을 수도 있을" 뿐 화면이나 파일을 모른다.
@@ -64,11 +64,11 @@ class Bm25Index:
             else:
                 output = {"reason": result["reason"]}
             trace.record("search_bm25", "tool",
-                         input={"query": query, "k": k, "region": region, "types": types, "today": today},
+                         input={"query": query, "k": k, "region": region, "types": types, "area": area, "today": today},
                          output=output, ok=result["ok"], took_ms=took)
         return result
 
-    def _search(self, query: str, k: int, region: str | None, types: list | None, today: str | None) -> dict:
+    def _search(self, query: str, k: int, region: str | None, types: list | None, today: str | None, area: str | None = None) -> dict:
         started = time.perf_counter()
 
         problem = check_filters(region, types)
@@ -87,7 +87,7 @@ class Bm25Index:
         for i, place in enumerate(self.places):
             if scores[i] <= 0:
                 continue
-            if not is_visible(place, region, types, today):
+            if not is_visible(place, region, types, today, area):
                 continue
             ranked.append((float(scores[i]), i))
         ranked.sort(reverse=True)

@@ -31,15 +31,16 @@ class HybridIndex:
         self.dense = dense
 
     def search(self, query: str, k: int = 10, region: str | None = None, types: list | None = None,
-               today: str | None = None, trace=None, w_dense: float | None = None) -> dict:
+               today: str | None = None, trace=None, w_dense: float | None = None,
+               area: str | None = None) -> dict:
         """성공: {"ok": True, "results": [...], "took_ms"} / 실패: {"ok": False, "reason"}  (BM25 · 임베딩과 같은 모양)"""
         started = time.perf_counter()
         w_dense = config.HYBRID_W_DENSE if w_dense is None else w_dense
         depth = config.RETRIEVE_K
 
         # 두 검색기에 실행 기록 장치를 그대로 넘긴다. 기록은 search_bm25 → search_dense → fuse_rrf 세 줄이 된다.
-        b = self.bm25.search(query, k=depth, region=region, types=types, today=today, trace=trace)
-        d = self.dense.search(query, k=depth, region=region, types=types, today=today, trace=trace)
+        b = self.bm25.search(query, k=depth, region=region, types=types, today=today, trace=trace, area=area)
+        d = self.dense.search(query, k=depth, region=region, types=types, today=today, trace=trace, area=area)
 
         # 왜: 조건 오류(지원하지 않는 지역 등)는 두 검색기가 같은 판정을 하므로 그대로 돌려준다. 어디: 실패 처리.
         # 교안: 3일차 Part2 "에러도 결과로".
