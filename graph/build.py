@@ -8,6 +8,7 @@ from datetime import date
 from langgraph.graph import END, START, StateGraph
 
 import config
+from graph.context import fetch_update
 from graph.parse import ask_back_update, parse_update
 from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
 from graph.state import State, retries_of
@@ -64,7 +65,8 @@ def _count(key: str):
 
 
 def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, today: str | None = None,
-                search=None, areas: dict | None = None):
+                search=None, areas: dict | None = None,
+                weather=None, festivals=None, stored: dict | None = None):
     """노드를 잇는다. trace · llm · today 는 바깥에서 받는다(평가 · 테스트가 가짜로 바꿔 끼운다)."""
     trace = trace or Trace(save=False)
     today = today or date.today().isoformat()
@@ -75,6 +77,8 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         updates["parse_request"] = parse_update(llm, today, trace)
         updates["grade_documents"] = grade_update(llm, trace)
         updates["transform_query"] = transform_update(llm, trace)
+    if weather is not None or festivals is not None:   # 둘 다 없으면 fetch_context 는 비어 있는 뼈대다
+        updates["fetch_context"] = fetch_update(weather, festivals, stored, trace)
     if search is not None:   # search 가 없으면 retrieve 는 비어 있는 뼈대다 (후보 없음)
         updates["retrieve"] = retrieve_update(search, areas)
     for name in NODES:

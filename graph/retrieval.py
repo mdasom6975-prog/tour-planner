@@ -67,7 +67,7 @@ def retrieve_update(search, areas: dict | None = None):
                 continue
             for item in got["results"]:
                 found.setdefault(item["id"], {**item, "kind": kind})
-        out = {"query": query, "candidates": list(found.values())}
+        out = {"query": query, "area": area, "candidates": list(found.values())}
         if error:
             out["search_error"] = error
         new_notes = [n for n in notes if n not in req.get("notes", [])]

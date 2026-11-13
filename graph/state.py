@@ -11,8 +11,10 @@ class State(TypedDict, total=False):
     request: dict        # parse_request 가 만든 조건 JSON. missing(빠진 조건 목록)을 함께 담는다
     candidates: list     # retrieve 가 찾은 후보 장소
     enough: bool         # grade_documents 판정: 조건에 맞는 후보가 충분한가
-    weather: dict
-    festivals: dict
+    area: str | None     # retrieve 가 실제로 거른 시 · 군 (place 가 주소와 맞았을 때만 값이 있다)
+    weather: dict        # fetch_context: 날짜별 날씨 · 비 · 눈 판정 · 알림 문장
+    festivals: dict      # fetch_context: 축제(items) · 상설 장기 행사(long_running) · 알림 문장
+    rest_table: dict     # fetch_context: {후보 id: {날짜: "closed" | "check"}} (영업일은 적지 않는다)
     course: dict         # draft_course 가 만든 일자별 배치
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
