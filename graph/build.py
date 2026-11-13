@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 import config
 from graph.context import fetch_update
 from graph.course import draft_update, respond_update
+from graph.edit import after_route, edit_update, route_update
 from graph.parse import ask_back_update, parse_update
 from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
 from graph.state import State, retries_of
@@ -17,7 +18,7 @@ from graph.validate import validate_update
 from harness.trace import Trace
 
 NODES = [
-    "parse_request", "ask_back", "retrieve", "grade_documents", "transform_query", "abstain",
+    "route", "edit_course", "parse_request", "ask_back", "retrieve", "grade_documents", "transform_query", "abstain",
     "fetch_context", "draft_course", "validate_course", "respond",
 ]
 
@@ -44,7 +45,7 @@ def after_validate(state: State) -> str:
     # 왜: 작성 횟수를 세면 최초 1회 + 재작성 MAX_REDRAFTS회가 되어, 위반 여부와 무관하게 같은 식이 선다. 어디: validate_course 뒤.
     # 교안: 3일차 평가자 · 최적화 루프 — 반복 상한은 config.MAX_REDRAFTS. 위반 표시는 6단계.
     if state.get("violations") and _retries(state)["draft"] <= config.MAX_REDRAFTS:
-        return "draft_course"
+        return "edit_course" if state.get("mode") == "edit" else "draft_course"   # 수정 턴이면 고친 코스를 다시 고친다
     return "respond"
 
 
@@ -82,6 +83,8 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         updates["draft_course"] = draft_update(llm, trace)   # 코스 칸 채우기(5-5). 쓸 때마다 draft 횟수를 센다
         updates["validate_course"] = validate_update(stored, detail, trace)   # 코드 검사 + 실시간 재확인(6단계)
         updates["respond"] = respond_update
+        updates["route"] = route_update(llm, trace)   # 코스가 있는 대화에서 새 요청 / 수정을 가른다(7-4)
+        updates["edit_course"] = edit_update(llm, trace)
     if weather is not None or festivals is not None:   # 둘 다 없으면 fetch_context 는 비어 있는 뼈대다
         updates["fetch_context"] = fetch_update(weather, festivals, stored, trace)
     if search is not None:   # search 가 없으면 retrieve 는 비어 있는 뼈대다 (후보 없음)
@@ -90,7 +93,9 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         g.add_node(name, _make_node(name, trace, updates.get(name)))
     # fetch_context 의 날씨 · 축제 · 휴무 병렬 처리는 5-4에서 안쪽에 넣는다.
 
-    g.add_edge(START, "parse_request")
+    g.add_edge(START, "route")
+    g.add_conditional_edges("route", after_route, ["parse_request", "edit_course"])
+    g.add_edge("edit_course", "validate_course")
     g.add_conditional_edges("parse_request", after_parse, ["ask_back", "retrieve"])
     g.add_edge("ask_back", END)
     g.add_edge("retrieve", "grade_documents")
@@ -99,6 +104,6 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
     g.add_edge("abstain", END)
     g.add_edge("fetch_context", "draft_course")
     g.add_edge("draft_course", "validate_course")
-    g.add_conditional_edges("validate_course", after_validate, ["draft_course", "respond"])
+    g.add_conditional_edges("validate_course", after_validate, ["draft_course", "edit_course", "respond"])
     g.add_edge("respond", END)
     return g.compile(checkpointer=checkpointer)

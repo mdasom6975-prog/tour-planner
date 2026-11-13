@@ -21,6 +21,9 @@ class State(TypedDict, total=False):
     removed: list       # 재작성을 다 쓰고도 남아 코스에서 뺀 위반 장소
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
+    mode: str            # route 가 정한 이번 턴의 종류: new(새 요청) | edit(이미 나온 코스 고치기)
+    edit_note: str       # edit_course 가 후보에 없어 반영하지 못한 부분(없으면 빈 문자열)
+    edit_error: str      # edit_course 의 LLM 호출이 실패했을 때의 오류 이름(이전 코스를 그대로 둔다)
     answer: dict         # 끝에 나가는 값: 되묻기 · 찾지 못함 · 코스
     # 왜: 노드마다 한 줄씩 덧붙여야 해서 합치는 방식(덧붙이기)을 정한다. 어디: 실행 기록 줄 목록.
     # 교안: 3일차 05 State 의 reducer — 같은 칸에 여러 노드가 쓸 때 어떻게 합칠지 지정한다.

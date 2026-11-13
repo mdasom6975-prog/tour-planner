@@ -4,6 +4,7 @@
 실행:  source .venv/bin/activate 뒤에 streamlit run app.py  (가상환경 밖에서 띄우면 kiwipiepy 를 못 찾는다)
 """
 import re
+import uuid
 from datetime import datetime
 
 import folium
@@ -13,7 +14,7 @@ from streamlit_folium import st_folium
 import config
 from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, map_link, map_view, route_by_day, shop_link,
                            summary_line, weather_by_date, weather_line)
-from graph.runtime import make_graph
+from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
 from harness.trace import Trace
 from rag.retriever import PLACES_PATH, Retriever
@@ -38,7 +39,7 @@ SCENARIOS = [
 NODE_LABEL = {
     "parse_request": "조건 이해", "ask_back": "조건 되묻기", "retrieve": "장소 검색", "grade_documents": "후보 판정",
     "transform_query": "검색어 고쳐 쓰기", "abstain": "찾지 못함", "fetch_context": "날씨 · 축제 · 휴무 확인",
-    "draft_course": "코스 짜기", "validate_course": "규칙 검사 · 실시간 재확인", "respond": "답 정리",
+    "route": "새 요청 / 수정 판별", "edit_course": "코스 고치기", "draft_course": "코스 짜기", "validate_course": "규칙 검사 · 실시간 재확인", "respond": "답 정리",
 }
 
 
@@ -47,6 +48,32 @@ def load_index(data_version: float) -> Retriever:
     # 왜: Streamlit 은 버튼을 누를 때마다 파일 전체를 다시 실행한다. 색인과 모델(준비 14초)을 매번 만들 수 없어 한 번만 만든다. 어디: 색인 준비.
     # 교안: 4일차 PRD "결과 캐시". 정제 파일의 수정 시각을 인자로 받아, 데이터가 바뀌면 저절로 다시 만든다.
     return Retriever.from_file()
+
+
+@st.cache_resource
+def load_saver():
+    # 왜: 대화 저장소 연결은 한 번만 열어 모든 화면 실행이 같이 쓴다. 어디: 후속 수정(7-4).
+    # 교안: 3일차 05 checkpointer.
+    return open_checkpointer()
+
+
+def start_thread(index: Retriever, saver) -> None:
+    """주소의 ?t= 값을 대화 번호로 쓴다. 새로고침해도 같은 대화의 코스를 저장소에서 다시 불러온다."""
+    if "thread_id" in st.session_state:
+        return
+    tid = st.query_params.get("t") or uuid.uuid4().hex
+    st.query_params["t"] = tid
+    st.session_state.thread_id = tid
+    saved = make_graph(index, checkpointer=saver).get_state({"configurable": {"thread_id": tid}}).values
+    if (saved.get("answer") or {}).get("kind") == "course":
+        st.session_state.final = saved
+        st.session_state.messages = [("assistant", "이전 대화를 이어 갑니다. 코스를 고치려면 \"둘째 날 점심 빼 줘\"처럼 말씀하세요.")]
+
+
+def new_thread() -> None:
+    st.session_state.thread_id = uuid.uuid4().hex
+    st.query_params["t"] = st.session_state.thread_id
+    st.session_state.update(messages=[], final={}, steps=[])
 
 
 def plain(text: str) -> str:
@@ -68,12 +95,14 @@ def step_note(node: str, upd: dict) -> str:
     if node == "validate_course":
         n = len(upd.get("violations") or [])
         return "위반 없음" if not n else f"위반 {n}건 → 다시 씀 또는 장소 제거"
-    if node == "draft_course" and upd.get("retries"):
+    if node == "route" and upd.get("mode"):
+        return "이어서 코스 고치기" if upd["mode"] == "edit" else "새 요청"
+    if node in ("draft_course", "edit_course") and upd.get("retries"):
         return f"{upd['retries']['draft']}번째 작성"
     return ""
 
 
-def run_question(question: str, index: Retriever) -> tuple:
+def run_question(question: str, index: Retriever, saver, thread_id: str) -> tuple:
     """그래프를 실행하며 끝난 단계를 한 줄씩 보여 준다. (최종 상태, 실행 기록 단계 목록)"""
     # 왜: 질문 한 건이 40초쯤 걸려 스피너만 보이면 멈춘 것처럼 보인다. 노드가 끝날 때마다 한 줄씩 쌓는다. 어디: 질문 처리.
     # 교안: 3일차 05 LangGraph 의 stream — 노드 하나가 끝날 때마다 그 노드가 바꾼 값(updates)을 받는다.
@@ -81,8 +110,9 @@ def run_question(question: str, index: Retriever) -> tuple:
     final = {}
     with st.status("코스를 짜는 중입니다…", expanded=True) as status:
         try:
-            graph = make_graph(index, trace)
-            for mode, chunk in graph.stream({"message": question}, stream_mode=["updates", "values"]):
+            graph = make_graph(index, trace, checkpointer=saver)
+            cfg = {"configurable": {"thread_id": thread_id}}   # 같은 thread_id 면 이전 코스를 이어 받아 후속 수정이 된다
+            for mode, chunk in graph.stream({"message": question}, cfg, stream_mode=["updates", "values"]):
                 if mode == "values":
                     final = chunk
                     continue
@@ -101,6 +131,9 @@ def run_question(question: str, index: Retriever) -> tuple:
 
 def chat_reply(final: dict) -> str:
     ans = final.get("answer") or {}
+    if ans.get("kind") == "course" and final.get("mode") == "edit":
+        removed = len(final.get("removed") or [])
+        return "요청대로 코스를 고쳤습니다." + (f" 규칙에 맞지 않아 뺀 곳이 {removed}곳 있습니다." if removed else " 규칙 검사를 다시 통과했습니다.") + " 오른쪽에서 확인하세요."
     if ans.get("kind") == "course":
         placed = sum(len(d["slots"]) for d in ans["days"])
         removed = len(final.get("removed") or [])
@@ -177,6 +210,10 @@ def draw_course(final: dict, index: Retriever) -> None:
             st.markdown(f"**{day['date']}** · {weather_line(weather.get(day['date']))}")
             for slot in day["slots"]:
                 draw_slot(slot, by_id.get(slot["id"], {}))
+    if ans.get("cafes"):
+        with st.expander("근처 카페 추천", expanded=True):
+            for b in ans["cafes"]:
+                st.markdown(f"**{plain(b['title'])}** — {plain(b['reason'])}  \n{plain(b['addr'])}" + (f"  \n{' · '.join(b['facts'])}" if b.get("facts") else ""))
     with st.expander("비나 눈이 오면 (부가 코스)", expanded=bool(ans.get("backup"))):
         for b in ans.get("backup") or []:
             st.markdown(f"**{plain(b['title'])}** ({b['type']}) — {plain(b['reason'])}  \n{plain(b['addr'])}" + (f"  \n{' · '.join(b['facts'])}" if b.get("facts") else ""))
@@ -223,15 +260,20 @@ def main() -> None:
 
     data_version = PLACES_PATH.stat().st_mtime
     index = load_index(data_version)
+    saver = load_saver()
+    start_thread(index, saver)
 
     title_col, toggle_col = st.columns([4, 1])
     title_col.title("어디갈래")
     title_col.caption("실제로 있는 장소만으로 짜는 국내 여행 코스")
     dev = toggle_col.toggle("개발자 모드", value=False)
+    if toggle_col.button("새 대화"):
+        new_thread()
+        st.rerun()
 
     # 왜: 시나리오 버튼과 입력창 어느 쪽으로 들어온 질문이든 한 곳에서 처리한다. 어디: 그리기 전에 질문만 정한다.
     # 교안: 직접 대응 없음 (Streamlit 이 매번 위에서 아래로 다시 실행하는 방식 때문에 필요한 순서).
-    question = st.chat_input("예: 다음 주 토요일부터 1박 2일 강릉, 부모님이랑")
+    question = st.chat_input("예: 다음 주 토요일부터 1박 2일 강릉, 부모님이랑 (코스가 나온 뒤에는 \"점심 빼 줘\"처럼 고칠 수 있어요)")
     if st.session_state.pending:
         question, st.session_state.pending = st.session_state.pending, None
 
@@ -240,7 +282,7 @@ def main() -> None:
         if question:
             with st.chat_message("user"):
                 st.markdown(plain(question))
-            final, steps = run_question(question, index)
+            final, steps = run_question(question, index, saver, st.session_state.thread_id)
             reply = chat_reply(final)
             with st.chat_message("assistant"):
                 st.markdown(plain(reply))

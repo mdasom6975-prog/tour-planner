@@ -56,6 +56,8 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
             want = config.FOOD_TYPES if s["slot"] in ("점심", "저녁") else config.SIGHT_TYPES
             if c.get("type") not in want:
                 out.append(_v("slot_type", f"{s['slot']} 칸에는 {'/'.join(want)} 유형만 넣을 수 있습니다. {c.get('title')}({c.get('type')}) 은(는) 맞지 않습니다.", cid, d["date"], s["slot"]))
+            if s["slot"] in ("점심", "저녁") and c.get("is_cafe"):   # 카페는 식사 자리가 아니라 "근처 카페 추천"으로 따로 둔다
+                out.append(_v("cafe_meal", f"{s['slot']} 칸에는 식당을 넣어야 합니다. {c.get('title')} 은(는) 카페입니다.", cid, d["date"], s["slot"]))
             if cid in seen:
                 out.append(_v("duplicate", f"{c.get('title')} 이(가) 코스에 두 번 들어 있습니다.", cid, d["date"], s["slot"]))
             seen.add(cid)

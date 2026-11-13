@@ -68,7 +68,14 @@ def retrieve_update(search, areas: dict | None = None):
             if not got.get("ok"):
                 error = got.get("reason", "검색 실패")
                 continue
-            for item in got["results"]:
+            results = got["results"]
+            if kind == "food":   # 왜: 카페는 점심 · 저녁 후보가 아니라 "근처 카페 추천" 후보다. 식당만 food 로 두고 카페는 cafe 로 나눈다. 어디: 음식점 검색 결과.
+                # 교안: 직접 대응 없음(2026-11-13 결정). 식당 후보 수는 다른 종류와 같은 한도(config.SEARCH_K)로 자른다.
+                cafes = [r for r in results if r.get("is_cafe")]
+                results = [r for r in results if not r.get("is_cafe")][:config.SEARCH_K]
+                for item in cafes[:config.SEARCH_K]:
+                    found.setdefault(item["id"], {**item, "kind": "cafe"})
+            for item in results:
                 found.setdefault(item["id"], {**item, "kind": kind})
         out = {"query": query, "area": area, "candidates": list(found.values())}
         if error:

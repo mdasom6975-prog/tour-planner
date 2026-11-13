@@ -39,7 +39,21 @@ class Backup(BaseModel):
     reason: str = Field(description="비나 눈이 올 때 가볼 만한 이유 한 문장")
 
 
+class CafePick(BaseModel):
+    content_id: str = Field(description="카페 후보의 id 를 그대로")
+    reason: str = Field(description="코스 근처에서 들르기 좋은 이유 한 문장")
+
+
 class Course(BaseModel):
     days: list[DayPlan] = Field(default_factory=list)
     rain_reason: str = Field("", description="비·눈 오는 날을 실내 위주로 짠 이유 한 줄. 그런 날이 없으면 빈 문자열")
     backup: list[Backup] = Field(default_factory=list, description="비나 눈이 올 때 갈 만한 실내 장소 2~3곳")
+    cafes: list[CafePick] = Field(default_factory=list, description="코스 근처에서 들를 만한 카페 2곳. 코스 칸에는 넣지 않는다")
+
+
+class Route(BaseModel):
+    mode: Literal["new", "edit"] = Field(description="지금 문장이 이미 나온 코스를 고치는 말이면 edit, 새 여행 요청이면 new")
+
+
+class EditedCourse(Course):
+    note: str = Field("", description="요청 중 후보에 없어서 반영하지 못한 부분을 한 문장으로. 모두 반영했으면 빈 문자열")

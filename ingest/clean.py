@@ -225,6 +225,7 @@ def build_places() -> dict:
                 "modified": f"{modified[:4]}-{modified[4:6]}-{modified[6:8]}" if len(modified) >= 8 else "",
                 **{k: detail[k] for k in DETAIL_TEXT_KEYS},   # overview · homepage · rest_text · hours_text · contact · parking · extra
                 "showflag": sync.get(cid, {}).get("showflag") or "",   # "1" 표출 · "0" 비표출 · "" 모름
+                "is_cafe": type_id == "39" and item.get("lclsSystm2") == config.CAFE_CLASS,   # 카페 · 전통찻집(음식점 중 FD05). 점심 · 저녁 자리에 넣지 않는다
                 "access": _access(access.get(cid)),   # {"이동": {"주차": "…"}, "시각": {…}, …} · 빈 사전은 정보 없음
                 "pet": _pet(pet.get(cid)),            # {"범위": "…", "견종": "…", …} · 빈 사전은 정보 없음
             })

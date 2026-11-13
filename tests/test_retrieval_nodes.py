@@ -60,7 +60,7 @@ def test_질의는_조건으로_만들고_제외_조건은_넣지_않는다():
 def test_충분하면_재시도_없이_다음으로_간다():
     h = Harness()
     path, out, _ = run(h)
-    assert path[:5] == ["parse_request", "retrieve", "grade_documents", "fetch_context", "draft_course"]
+    assert path[:6] == ["route", "parse_request", "retrieve", "grade_documents", "fetch_context", "draft_course"]
     assert "transform_query" not in path and out["retries"].get("search", 0) == 0
     assert [s["types"] for s in h.searches] == [config.SIGHT_TYPES, config.FOOD_TYPES, config.INDOOR_TYPES]   # 가볼 곳 · 음식점 · 실내(부가 코스) 세 번
     assert {c["kind"] for c in out["candidates"]} == {"sight", "food", "indoor"}

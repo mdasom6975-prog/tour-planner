@@ -11,7 +11,7 @@ from ingest.clean import _text, detail_fields
 
 log = get_logger("tools.places")
 
-FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "modified")
+FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "modified", "is_cafe")
 
 
 def search_places(query: str, region: str | None = None, types: list | None = None, k: int | None = None, *,

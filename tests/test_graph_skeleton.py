@@ -12,18 +12,18 @@ def run(state):
 
 def test_조건이_충분하고_후보도_충분하면_끝까지_간다():
     path, _ = run({"request": {}, "enough": True})
-    assert path == ["parse_request", "retrieve", "grade_documents", "fetch_context",
+    assert path == ["route", "parse_request", "retrieve", "grade_documents", "fetch_context",
                     "draft_course", "validate_course", "respond"]
 
 
 def test_조건이_부족하면_되묻고_끝난다():
     path, _ = run({"request": {"missing": ["날짜"]}})
-    assert path == ["parse_request", "ask_back"]
+    assert path == ["route", "parse_request", "ask_back"]
 
 
 def test_후보가_부족하면_두번_다시_찾고_포기한다():
     path, out = run({"request": {}, "enough": False})
-    assert path == ["parse_request", "retrieve", "grade_documents", "transform_query",
+    assert path == ["route", "parse_request", "retrieve", "grade_documents", "transform_query",
                     "retrieve", "grade_documents", "transform_query",
                     "retrieve", "grade_documents", "abstain"]
     assert out["retries"]["search"] == config.MAX_SEARCH_RETRIES

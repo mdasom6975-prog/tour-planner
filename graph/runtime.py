@@ -2,18 +2,20 @@
 
 핵심 로직(graph/)은 의존을 인자로 받는다. 어떤 실제 함수를 꽂는지는 여기 한 곳에 적는다.
 """
+import sqlite3
 from datetime import date
+from pathlib import Path
 
 import config
 from graph.build import build_graph
 from graph.llm import make_llm
 from harness.trace import Trace
+from langgraph.checkpoint.sqlite import SqliteSaver
 from rag.filters import areas_in
 from tools.festivals import search_festivals
 from tools.places import get_place_detail, search_places
 from tools.weather import get_weather
 
-SEARCH_K = 10   # 종류(가볼 곳 · 음식점 · 실내)마다 가져오는 후보 수. 5-5 실행에서 쓴 값
 
 
 def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = None, llm=None, checkpointer=None, today: str | None = None):
@@ -25,10 +27,23 @@ def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = 
     areas = {region: areas_in(retriever.places, region) for region in config.REGIONS}
     return build_graph(
         trace or Trace(), checkpointer, llm=llm or make_llm(provider), today=today,
-        search=lambda q, region=None, types=None, area=None: search_places(q, region=region, types=types, area=area, k=SEARCH_K, retriever=retriever, today=today),
+        # 왜: 음식점 결과에는 카페가 섞여 있어 걸러 내면 식당이 모자란다. 음식점은 넉넉히 받고 retrieve 가 식당 · 카페로 나눠 자른다. 어디: 검색 k.
+        # 교안: 직접 대응 없음.
+        search=lambda q, region=None, types=None, area=None: search_places(
+            q, region=region, types=types, area=area, k=config.SEARCH_K * (config.FOOD_OVERFETCH if types == config.FOOD_TYPES else 1),
+            retriever=retriever, today=today),
         areas=areas,
         weather=lambda lat, lon, dates: get_weather(lat, lon, dates, today=today),
         festivals=lambda region, start, end: search_festivals(region, start, end, places=retriever.places),
         stored=places,
         detail=lambda cid: get_place_detail(cid, places=places, today=today),
     )
+
+
+def open_checkpointer(path: str | None = None) -> SqliteSaver:
+    """대화(thread_id)별 State 를 파일에 저장하는 저장소. 화면 스레드가 바뀌어도 쓰도록 check_same_thread 를 끈다."""
+    # 왜: 새로고침 · 재시작 뒤에도 같은 대화의 코스를 이어 받는다. 어디: 후속 수정(7-4).
+    # 교안: 3일차 05 checkpointer — 메모리 저장소(MemorySaver)를 파일 저장소로 바꾼 것.
+    target = Path(path or config.CHAT_DB_PATH)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return SqliteSaver(sqlite3.connect(str(target), check_same_thread=False))

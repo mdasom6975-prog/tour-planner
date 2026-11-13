@@ -32,7 +32,9 @@ def app(monkeypatch, tmp_path):
     festivals = lambda r, s, e: {"ok": True, "results": []}
     stored = {c["id"]: {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False} for c in CANDS}
     monkeypatch.setattr(graph.runtime, "make_graph", lambda index, trace=None, **k: build_graph(
-        Trace(base_dir=tmp_path), llm=llm, today="2026-11-13", search=h.search, weather=weather, festivals=festivals, stored=stored, detail=h.detail))
+        Trace(base_dir=tmp_path), k.get("checkpointer"), llm=llm, today="2026-11-13", search=h.search, weather=weather, festivals=festivals, stored=stored, detail=h.detail))
+    real_open = graph.runtime.open_checkpointer
+    monkeypatch.setattr(graph.runtime, "open_checkpointer", lambda path=None: real_open(str(tmp_path / "chat.sqlite")))   # 시험이 실제 대화 파일을 건드리지 않게
     at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=60)
     at.mode = mode
     at.run()

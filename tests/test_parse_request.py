@@ -27,7 +27,7 @@ def run(llm, message="아무 문장"):
 def test_조건이_충분하면_검색으로_간다():
     path, out, _ = run(fake(region="강릉", days=2, start_date="2026-11-21", companions="부모님",
                             preferences=["걷기 적게"], exclusions=["해산물"]))
-    assert path[:3] == ["parse_request", "retrieve", "grade_documents"]
+    assert path[:4] == ["route", "parse_request", "retrieve", "grade_documents"]
     req = out["request"]
     assert (req["region"], req["days"], req["start_date"], req["missing"]) == ("강릉", 2, "2026-11-21", [])
     assert req["exclusions"] == ["해산물"]
@@ -35,14 +35,14 @@ def test_조건이_충분하면_검색으로_간다():
 
 def test_지역이_없으면_되묻는다():
     path, out, _ = run(fake(days=2))
-    assert path == ["parse_request", "ask_back"]
+    assert path == ["route", "parse_request", "ask_back"]
     assert out["answer"]["missing"] == ["region"]
     assert "어느 지역" in out["answer"]["text"]
 
 
 def test_일수가_없으면_되묻는다():
     path, out, _ = run(fake(region="부산"))
-    assert path == ["parse_request", "ask_back"]
+    assert path == ["route", "parse_request", "ask_back"]
     assert out["answer"]["missing"] == ["days"]
 
 
@@ -53,7 +53,7 @@ def test_지역과_일수가_모두_없으면_한번에_묻는다():
 
 def test_지원하지_않는_지역은_준비되지_않았다고_답한다():
     path, out, _ = run(fake(region="대전", days=2))
-    assert path == ["parse_request", "ask_back"]
+    assert path == ["route", "parse_request", "ask_back"]
     assert out["request"]["region"] is None
     assert "준비되지 않은 지역" in out["answer"]["text"] and "대전" in out["answer"]["text"]
 
@@ -66,7 +66,7 @@ def test_일수가_상한을_넘으면_되묻는다():
 def test_날짜가_없거나_틀려도_진행하고_사유를_남긴다():
     for start, note in [(None, None), ("내일모레", "start_date_invalid"), ("2026-11-01", "start_date_past")]:
         path, out, _ = run(fake(region="서울", days=1, start_date=start))
-        assert path[1] == "retrieve"
+        assert path[2] == "retrieve"
         assert out["request"]["start_date"] is None
         assert out["request"]["notes"] == ([note] if note else [])
 
@@ -80,7 +80,7 @@ def test_LLM이_실패해도_멈추지_않고_되묻는다():
     def broken(system, user, schema):
         raise RuntimeError("api down")
     path, out, trace = run(broken)
-    assert path == ["parse_request", "ask_back"]
+    assert path == ["route", "parse_request", "ask_back"]
     assert out["answer"]["missing"] == ["parse_failed"]
     llm_step = [s for s in trace.steps if s["kind"] == "llm"][0]
     assert llm_step["ok"] is False and llm_step["output"] == {"error": "RuntimeError"}

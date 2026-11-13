@@ -167,3 +167,15 @@ WEATHER_FORECAST_DAYS = 16   # 오늘을 포함해 예보가 나오는 일수
 # 교안: 직접 대응 없음. 2026-11-13 날씨 서버가 20분 죽었을 때 남은 기록이 없어서 넣었다.
 LOG_DIR = "logs"           # logs/날짜/debug.log (전부) · logs/날짜/error.log (ERROR 이상)
 LOG_MAX_CHARS = 1000       # 한 줄에 적는 글자 수 상한. 소개글 · 질문 전문이 통째로 남지 않게 한다
+
+
+# 왜: 후속 수정이 같은 대화의 코스를 이어 받으려면 State 를 저장해야 한다. 새로고침해도 이어 가도록 파일로 둔다. 어디: graph/runtime.py 의 open_checkpointer.
+# 교안: 3일차 05 checkpointer — thread_id 가 대화 하나다.
+CHAT_DB_PATH = "data/chat.sqlite"
+
+# 왜: 관광공사는 카페도 음식점(contenttypeid 39)으로 줘서 점심 · 저녁 후보에 섞였다. 원본 목록의 분류(lclsSystm2) FD05 가 카페 · 전통찻집이다. 어디: ingest/clean.py 의 is_cafe, graph/retrieval.py.
+# 교안: 직접 대응 없음. 점심 · 저녁은 식당만, 카페는 "근처 카페 추천" CAFE_PICKS 곳을 따로 둔다(2026-11-13 결정).
+CAFE_CLASS = "FD05"
+CAFE_PICKS = 2
+SEARCH_K = 10        # 종류(가볼 곳 · 식당 · 카페 · 실내)마다 남기는 후보 수. 5-5 실행에서 쓴 값
+FOOD_OVERFETCH = 3   # 카페를 걸러 내고도 식당 후보가 SEARCH_K 곳 남도록 음식점은 이 배수만큼 넉넉히 찾는다

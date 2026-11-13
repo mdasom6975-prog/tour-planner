@@ -12,3 +12,4 @@ data/processed/
 data/eval/
 eval/pool/
 logs/
+data/chat.sqlite*

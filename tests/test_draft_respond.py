@@ -75,7 +75,7 @@ def test_부가_코스_후보와_휴무_표를_보여_준다():
 
 def test_LLM이_실패해도_멈추지_않고_빈_코스와_오류를_남긴다():
     out, _ = draft(TimeoutError("느림"))
-    assert out["course"] == {"days": [], "rain_reason": "", "backup": []} and out["course_error"] == "TimeoutError"
+    assert out["course"] == {"days": [], "rain_reason": "", "backup": [], "cafes": []} and out["course_error"] == "TimeoutError"
     assert out["retries"]["draft"] == 1
     assert respond_update({**state(), "course": out["course"]})["answer"]["kind"] == "error"
 

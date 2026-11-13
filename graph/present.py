@@ -95,6 +95,11 @@ def export_markdown(state: dict, places: dict, as_of: str) -> str:
                 lines.append(f"- 소개(관광공사 원문 발췌): {excerpt(place['overview'])}")
             lines.append(f"- [지도에서 보기]({map_link(place or s)})" + (f" · 정보 기준일 {place['modified']}" if place.get("modified") else ""))
             lines.append("")
+    if ans.get("cafes"):
+        lines += ["## 근처 카페 추천", ""]
+        for b in ans["cafes"]:
+            lines += [f"- {b['title']} — {b['reason']} · 주소: {b['addr']}" + (f" · {' · '.join(b['facts'])}" if b.get("facts") else "")]
+        lines.append("")
     lines += ["## 비나 눈이 오면 (부가 코스)", ""]
     for b in ans.get("backup", []) or []:
         lines += [f"- {b['title']} ({b['type']}) — {b['reason']} · 주소: {b['addr']}"]
