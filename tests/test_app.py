@@ -71,3 +71,13 @@ def test_처리_중_오류가_나도_화면은_사유를_말한다(monkeypatch, 
     monkeypatch.setattr(graph.runtime, "make_graph", boom)
     app.chat_input[0].set_value("강릉 1박 2일").run()
     assert not app.exception and any("처리 중 문제가 생겼습니다(TimeoutError)" in m.value.replace("\\", "") for m in app.markdown)
+
+
+def test_지역을_고르면_그_지역의_취향_칩이_나온다(app):
+    import config
+    groups = app.get("button_group")
+    assert len(groups) == 1 and "제주" in str(groups[0].proto.options)   # 처음에는 지역 칩만
+    groups[0].set_value("제주").run()
+    assert not app.exception
+    labels = [str(g.proto.options) for g in app.get("button_group")]
+    assert len(labels) == 2 and all(t in labels[1] for t in config.REGION_THEMES["제주"])

@@ -50,6 +50,10 @@ def _area_for(req: dict, areas: dict | None):
     place = req.get("place")
     if not place or areas is None:
         return None, []
+    # 왜: place 가 지역 이름 자체("부산", "제주")면 시 · 구 거르기가 아니다. "부산진구"가 "부산"으로 시작해 부산진구로 좁혀지던 버그. 어디: 지역 이름 판별.
+    # 교안: 직접 대응 없음.
+    if place == req.get("region"):
+        return None, []
     if any(a.startswith(place) for a in areas.get(req.get("region"), ())):
         return place, []
     return None, ["place_unmatched"]
@@ -75,9 +79,22 @@ def retrieve_update(search, areas: dict | None = None):
                 results = [r for r in results if not r.get("is_cafe")][:config.SEARCH_K]
                 for item in cafes[:config.SEARCH_K]:
                     found.setdefault(item["id"], {**item, "kind": "cafe"})
+            if kind == "indoor":   # 박물관류가 위쪽을 채워도 다른 종류가 SEARCH_K 곳 남도록 나눠 자른다
+                results = [r for r in results if r.get("category") != config.MUSEUM_CLASS][:config.SEARCH_K] \
+                    + [r for r in results if r.get("category") == config.MUSEUM_CLASS][:config.MUSEUM_CANDIDATES]
             for item in results:
                 found.setdefault(item["id"], {**item, "kind": kind})
-        out = {"query": query, "area": area, "candidates": list(found.values())}
+        # 왜: 박물관류(VE07)가 후보를 채우면 코스도 박물관만 나온다. 후보 단계에서 MUSEUM_CANDIDATES 곳까지만 남기고 나머지는 다른 종류로 채운다. 어디: 후보 합치기.
+        # 교안: 직접 대응 없음(2026-11-13 결정). 코스 안에서 1곳으로 줄이는 것은 validate_course 규칙이다.
+        museums = 0
+        kept = []
+        for c in found.values():
+            if c.get("category") == config.MUSEUM_CLASS:
+                museums += 1
+                if museums > config.MUSEUM_CANDIDATES:
+                    continue
+            kept.append(c)
+        out = {"query": query, "area": area, "candidates": kept}
         if error:
             out["search_error"] = error
         new_notes = [n for n in notes if n not in req.get("notes", [])]

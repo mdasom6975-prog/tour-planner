@@ -82,7 +82,7 @@ def test_거리_상한은_지역마다_다르다():
         assert ("distance", "f3") in rules(c, region="강릉")
     finally:
         config.MAX_LEG_KM_BY_REGION["강릉"] = old
-    assert config.MAX_LEG_KM_BY_REGION == {"서울": 20, "강릉": 25, "부산": 25}
+    assert config.MAX_LEG_KM_BY_REGION == {"서울": 10, "제주": 20, "강릉": 25, "부산": 25}
 
 
 def test_휴무와_철수는_다시_받은_값으로_판정한다():

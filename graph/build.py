@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 import config
 from graph.context import fetch_update
 from graph.course import draft_update, respond_update
-from graph.edit import after_route, edit_update, route_update
+from graph.edit import add_update, after_route, edit_update, route_update
 from graph.parse import ask_back_update, parse_update
 from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
 from graph.state import State, retries_of
@@ -18,7 +18,7 @@ from graph.validate import validate_update
 from harness.trace import Trace
 
 NODES = [
-    "route", "edit_course", "parse_request", "ask_back", "retrieve", "grade_documents", "transform_query", "abstain",
+    "route", "add_candidates", "edit_course", "parse_request", "ask_back", "retrieve", "grade_documents", "transform_query", "abstain",
     "fetch_context", "draft_course", "validate_course", "respond",
 ]
 
@@ -85,6 +85,7 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         updates["respond"] = respond_update
         updates["route"] = route_update(llm, trace)   # 코스가 있는 대화에서 새 요청 / 수정을 가른다(7-4)
         updates["edit_course"] = edit_update(llm, trace)
+        updates["add_candidates"] = add_update(search, stored, trace)   # 추가 취향 · 장소 이름을 후보에 더한다
     if weather is not None or festivals is not None:   # 둘 다 없으면 fetch_context 는 비어 있는 뼈대다
         updates["fetch_context"] = fetch_update(weather, festivals, stored, trace)
     if search is not None:   # search 가 없으면 retrieve 는 비어 있는 뼈대다 (후보 없음)
@@ -94,7 +95,8 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
     # fetch_context 의 날씨 · 축제 · 휴무 병렬 처리는 5-4에서 안쪽에 넣는다.
 
     g.add_edge(START, "route")
-    g.add_conditional_edges("route", after_route, ["parse_request", "edit_course"])
+    g.add_conditional_edges("route", after_route, ["parse_request", "add_candidates"])
+    g.add_edge("add_candidates", "edit_course")
     g.add_edge("edit_course", "validate_course")
     g.add_conditional_edges("parse_request", after_parse, ["ask_back", "retrieve"])
     g.add_edge("ask_back", END)

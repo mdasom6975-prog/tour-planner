@@ -22,15 +22,16 @@ def swap_lunch(new_id, note=""):
 
 
 class Fake:
-    def __init__(self, mode="edit", edits=None, fail=None):
+    def __init__(self, mode="edit", edits=None, fail=None, add_terms=(), add_places=()):
         self.mode, self.edits, self.fail, self.calls = mode, list(edits or []), fail, []
+        self.add_terms, self.add_places = list(add_terms), list(add_places)
 
     def __call__(self, system, user, schema):
         self.calls.append((schema.__name__, user))
         if schema is Route:
             if self.fail == "route":
                 raise RuntimeError("down")
-            return {"mode": self.mode}
+            return {"mode": self.mode, "add_preferences": self.add_terms, "add_places": self.add_places}
         if schema is EditedCourse:
             if self.fail == "edit":
                 raise RuntimeError("down")
@@ -40,11 +41,11 @@ class Fake:
         return {"region": "강릉", "days": 1}
 
 
-def run(fake, state=None, message="점심 장소 빼 줘"):
+def run(fake, state=None, message="점심 장소 빼 줘", search=None, extra_stored=()):
     trace = Trace(save=False)
-    g = build_graph(trace, llm=fake, today="2026-11-13", search=lambda *a, **k: {"ok": True, "results": []},
+    g = build_graph(trace, llm=fake, today="2026-11-13", search=search or (lambda *a, **k: {"ok": True, "results": []}),
                     weather=lambda *a: WEATHER, festivals=lambda *a: {"ok": True, "items": [], "long_running": []},
-                    stored={c["id"]: c for c in CANDS}, detail=lambda cid: {"ok": False, "reason": "skip"})
+                    stored={**{c["id"]: c for c in CANDS}, **{c["id"]: c for c in extra_stored}}, detail=lambda cid: {"ok": False, "reason": "skip"})
     out = g.invoke({**(PREV if state is None else state), "message": message})
     return [e["step"] for e in out["trace"]], out
 
@@ -58,7 +59,7 @@ def test_코스가_없으면_LLM_없이_새_요청으로_간다():
 def test_수정이면_검색하지_않고_기존_코스만_고쳐_검사한다():
     f = Fake(edits=[swap_lunch("f4")])
     path, out = run(f)
-    assert path[:3] == ["route", "edit_course", "validate_course"] and path[-1] == "respond"
+    assert path[:4] == ["route", "add_candidates", "edit_course", "validate_course"] and path[-1] == "respond"
     assert "retrieve" not in path and "parse_request" not in path
     assert out["answer"]["days"][0]["slots"][1]["id"] == "f4"
     assert out["retries"]["draft"] == 1 and out["violations"] == []   # 지난 턴 횟수 3 이 아니라 새로 센다
@@ -127,3 +128,38 @@ def test_SQLite_체크포인터는_같은_대화를_이어_받는다(tmp_path):
         assert g.get_state(cfg).values["answer"]["kind"] == "course"
         out = g.invoke({"message": "점심 빼 줘"}, cfg)
     assert out["answer"]["days"][0]["slots"][1]["id"] == "f4"
+
+
+# --- 추가 요청: 취향으로 더 찾기 · 이름으로 넣기 -----------------------------------------------
+def test_취향을_더하면_그_취향으로_다시_찾아_후보에_합치고_코스에_넣는다():
+    seen = []
+
+    def search(query, *, region, types, area):
+        seen.append((query, types))
+        return {"ok": True, "results": [{"id": "산1", "title": "산1", "type": "관광지", "region": "강릉", "addr": "강릉시", "lat": 37.7, "lon": 128.9,
+                                         "modified": "", "snippet": "산", "is_cafe": False, "category": "NA01"}] if types == config.SIGHT_TYPES else []}
+    edit = swap_lunch("f4")
+    edit["days"][0]["slots"][0]["content_id"] = "산1"
+    f = Fake(edits=[edit], add_terms=["산"])
+    path, out = run(f, search=search, message="산도 넣어 줘")
+    assert path[:3] == ["route", "add_candidates", "edit_course"]
+    assert ("강릉 산", config.SIGHT_TYPES) in seen
+    user = [c[1] for c in f.calls if c[0] == "EditedCourse"][0]
+    assert "이번에 추가한 후보 id" in user and "산1" in user
+    assert out["answer"]["days"][0]["slots"][0]["id"] == "산1"
+
+
+def test_이름으로_말한_장소는_저장_데이터에서_찾고_없으면_알린다():
+    extra = [place("성산", "sight", "관광지", category="NA01") | {"title": "성산일출봉", "region": "강릉"}]
+    f = Fake(edits=[swap_lunch("f4")], add_places=["성산일출봉", "없는곳이름"])
+    path, out = run(f, extra_stored=extra, message="성산일출봉 넣어 줘")
+    user = [c[1] for c in f.calls if c[0] == "EditedCourse"][0]
+    assert "성산" in user and "성산일출봉" in user
+    assert any("없는곳이름" in n and "찾지 못했습니다" in n for n in out["answer"]["notices"])
+
+
+def test_추가_요청이_없으면_찾기_없이_지나간다():
+    called = []
+    f = Fake(edits=[swap_lunch("f4")])
+    path, _ = run(f, search=lambda *a, **k: called.append(1) or {"ok": True, "results": []})
+    assert "add_candidates" in path and not called

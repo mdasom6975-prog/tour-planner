@@ -10,10 +10,11 @@ from datetime import datetime
 
 import folium
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 
 import config
-from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, load_kakao_ids, map_view, place_links, route_by_day,
+from graph.present import (CREDIT, compose_question, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day,
                            summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
@@ -229,7 +230,15 @@ def draw_course(final: dict, index: Retriever) -> None:
             st.markdown(f"**{plain(b['title'])}** ({b['type']}) — {plain(b['reason'])}  \n{plain(b['addr'])}" + (f"  \n{' · '.join(b['facts'])}" if b.get("facts") else ""))
         if not ans.get("backup"):
             st.caption("이 조건에서 실내 후보를 찾지 못했습니다.")
+    cards = festival_cards(final.get("festivals"), by_id)
+    if cards:
+        # 왜: 축제 · 장기 행사는 글 한 줄보다 사진을 넘겨 보며 고르는 편이 쉽다. 사진을 누르면 정보가 열린다. 어디: 코스 카드 아래.
+        # 교안: 직접 대응 없음(2026-11-13 요청). Streamlit 안에서 HTML 컴포넌트로 그린다.
+        st.markdown("##### 이 기간의 축제 · 행사")
+        components.html(gallery_html(cards), height=280)   # 안쪽 스크립트가 누를 때마다 높이를 맞춘다
     for note in ans.get("notices") or []:
+        if cards and (note.startswith("이 기간 축제:") or note.startswith("상설 · 장기 행사")):
+            continue   # 갤러리가 같은 내용을 보여 준다
         st.info(plain(note))
     as_of = datetime.fromtimestamp(PLACES_PATH.stat().st_mtime).strftime("%Y-%m-%d")
     st.download_button("코스 내려받기 (.md)", export_markdown(final, by_id, as_of, kakao_ids(KAKAO_IDS_PATH.stat().st_mtime if KAKAO_IDS_PATH.exists() else 0.0)), file_name="어디갈래_코스.md", mime="text/markdown")
@@ -265,7 +274,7 @@ def draw_trace() -> None:
 def main() -> None:
     st.set_page_config(page_title="어디갈래", layout="wide")
     setup_logging()   # Streamlit 이 스크립트를 다시 돌릴 때마다 불려도 한 번 부른 것과 같다 (harness/logs.py)
-    for key, default in (("messages", []), ("final", {}), ("steps", []), ("pending", None)):
+    for key, default in (("messages", []), ("final", {}), ("steps", []), ("pending", None), ("chip_round", 0)):
         st.session_state.setdefault(key, default)
 
     data_version = PLACES_PATH.stat().st_mtime
@@ -284,20 +293,42 @@ def main() -> None:
     # 왜: 시나리오 버튼과 입력창 어느 쪽으로 들어온 질문이든 한 곳에서 처리한다. 어디: 그리기 전에 질문만 정한다.
     # 교안: 직접 대응 없음 (Streamlit 이 매번 위에서 아래로 다시 실행하는 방식 때문에 필요한 순서).
     question = st.chat_input("예: 다음 주 토요일부터 1박 2일 강릉, 부모님이랑 (코스가 나온 뒤에는 \"점심 빼 줘\"처럼 고칠 수 있어요)")
-    if st.session_state.pending:
+    from_pending = bool(st.session_state.pending)
+    if from_pending:
         question, st.session_state.pending = st.session_state.pending, None
+
+    has_course = (st.session_state.final.get("answer") or {}).get("kind") == "course"
+    round_ = st.session_state.chip_round
+    region_key, theme_key = f"chip_region_{round_}", f"chip_themes_{round_}"
+    asked = question
+    if question and not from_pending:   # 입력창으로 보낸 문장에만 칩 선택을 덧붙인다(시나리오 · 추가 버튼은 이미 완성된 문장)
+        question = compose_question(question, None if has_course else st.session_state.get(region_key), st.session_state.get(theme_key) or [], has_course)
+
+    def draw_chips() -> None:
+        # 왜: "바다를 말하지 않으면 바다가 0곳"이라 지역마다 대표 취향을 눌러 고르게 한다. 코스가 나온 뒤에는 같은 칩이 "취향 추가"가 된다. 어디: 대화 아래.
+        # 교안: 직접 대응 없음(2026-11-13 요청). 칩 키에 번호를 붙여, 질문을 보내면 번호가 바뀌어 선택이 지워진다.
+        course_now = (st.session_state.final.get("answer") or {}).get("kind") == "course"   # 질문 처리 뒤의 최신 상태
+        rk, tk = f"chip_region_{st.session_state.chip_round}", f"chip_themes_{st.session_state.chip_round}"
+        region = (st.session_state.final.get("request") or {}).get("region") if course_now else st.pills("지역", list(config.REGIONS), key=rk)
+        if region in config.REGION_THEMES:
+            themes = st.pills("취향 추가하기" if course_now else "취향 고르기", config.REGION_THEMES[region], selection_mode="multi", key=tk)
+            if course_now and themes and st.button("선택한 취향 넣어서 다시 고치기"):
+                st.session_state.pending = compose_question("", None, themes, True)
+                st.rerun()
 
     def chat_and_run() -> None:
         draw_chat()
         if question:
             with st.chat_message("user"):
-                st.markdown(plain(question))
+                st.markdown(plain(asked))
             final, steps = run_question(question, index, saver, st.session_state.thread_id)
+            st.session_state.chip_round += 1   # 보낸 칩 선택을 지운다(다음 그림부터 새 칩)
             reply = chat_reply(final)
             with st.chat_message("assistant"):
                 st.markdown(plain(reply))
-            st.session_state.messages += [("user", question), ("assistant", reply)]
+            st.session_state.messages += [("user", asked), ("assistant", reply)]
             st.session_state.final, st.session_state.steps = final, steps
+        draw_chips()
 
     if dev:
         left, middle, right = st.columns([1, 2.2, 1.4])

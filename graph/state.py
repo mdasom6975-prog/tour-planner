@@ -22,6 +22,9 @@ class State(TypedDict, total=False):
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
     mode: str            # route 가 정한 이번 턴의 종류: new(새 요청) | edit(이미 나온 코스 고치기)
+    add_terms: list      # route 가 읽은, 더 넣고 싶다는 취향 낱말(add_candidates 가 이 취향으로 한 번 더 찾는다)
+    add_places: list     # route 가 읽은, 이름을 말하며 넣어 달라는 장소 이름
+    added: list          # add_candidates 가 이번 턴에 후보에 더한 장소 id
     edit_note: str       # edit_course 가 후보에 없어 반영하지 못한 부분(없으면 빈 문자열)
     edit_error: str      # edit_course 의 LLM 호출이 실패했을 때의 오류 이름(이전 코스를 그대로 둔다)
     answer: dict         # 끝에 나가는 값: 되묻기 · 찾지 못함 · 코스

@@ -52,7 +52,9 @@ class Course(BaseModel):
 
 
 class Route(BaseModel):
-    mode: Literal["new", "edit"] = Field(description="지금 문장이 이미 나온 코스를 고치는 말이면 edit, 새 여행 요청이면 new")
+    mode: Literal["new", "edit"] = Field(description="지금 문장이 이미 나온 코스를 고치거나 더하는 말이면 edit, 새 여행 요청이면 new")
+    add_preferences: list[str] = Field(default_factory=list, description="edit 일 때, 코스에 더 넣고 싶다고 한 취향 · 테마 낱말(예: 산, 바다, 흑돼지). 없으면 빈 목록")
+    add_places: list[str] = Field(default_factory=list, description="edit 일 때, 이름을 말하며 넣어 달라고 한 장소 이름(예: 성산일출봉). 없으면 빈 목록")
 
 
 class EditedCourse(Course):

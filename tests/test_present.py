@@ -59,6 +59,37 @@ def test_지도_중심과_확대는_핀_범위에서_정한다():
     assert map_view([("d", [{"lat": 37.0, "lon": 127.0}])])[2] == 15          # 한 곳이면 최대 15
 
 
+# --- 축제 · 장기 행사 갤러리 -------------------------------------------------
+def test_갤러리_카드는_축제를_먼저_장기_행사를_뒤에_두고_저장된_사진과_원문을_쓴다():
+    from graph.present import festival_cards
+    fest = {"items": [{"id": "a", "title": "축제A", "event_start": "2026-11-14", "event_end": "2026-11-16", "days_in_trip": ["2026-11-14"], "lat": 1, "lon": 2}],
+            "long_running": [{"id": "b", "title": "장기B", "event_start": "2026-10-01", "event_end": "2026-12-31", "days_in_trip": [], "lat": 1, "lon": 2}]}
+    places = {"a": {"image": "https://x/a.jpg", "overview": "원문 소개", "homepage": "javascript:alert(1)", "extra": {"fee": "무료", "host": "주최"}},
+              "b": {"image": "", "overview": "장기 소개", "homepage": "https://b.kr"}}
+    cards = festival_cards(fest, places)
+    assert [(c["id"], c["label"]) for c in cards] == [("a", "축제"), ("b", "상설 · 장기 행사")]
+    assert cards[0]["image"] == "https://x/a.jpg" and cards[0]["fee"] == "무료" and cards[0]["homepage"] == ""   # 위험한 주소는 버린다
+    assert cards[1]["homepage"] == "https://b.kr" and cards[1]["image"] == ""
+
+
+def test_갤러리는_가로_스크롤과_클릭_정보를_갖고_글자는_이스케이프한다():
+    from graph.present import festival_cards, gallery_html
+    fest = {"items": [{"id": "a", "title": '<script>alert(1)</script>', "event_start": "2026-11-14", "event_end": "2026-11-16", "days_in_trip": [], "lat": 1, "lon": 2}],
+            "long_running": []}
+    out = gallery_html(festival_cards(fest, {"a": {"image": 'x" onerror="alert(2)', "overview": "<b>소개</b>"}}))
+    assert "overflow-x:auto" in out and 'class="card"' in out and "addEventListener('click'" in out
+    assert "<script>alert(1)</script>" not in out and '" onerror="' not in out and "&lt;script&gt;" in out
+    assert "object-fit:contain" in out   # 사진을 자르지 않고 전체를 보인다
+    assert out.count("<script>") == 1     # 우리 스크립트 하나뿐
+
+
+def test_갤러리_카드는_정해진_수까지만():
+    from graph.present import festival_cards
+    import config
+    fest = {"items": [{"id": str(n), "title": f"t{n}", "event_start": "a", "event_end": "b", "days_in_trip": []} for n in range(config.GALLERY_MAX + 5)], "long_running": []}
+    assert len(festival_cards(fest, {})) == config.GALLERY_MAX
+
+
 def test_장소_ID가_있으면_카카오_장소_링크_하나_없으면_기존_두_링크():
     from graph.present import place_links
     with_id = place_links({**PLACES["2"], "id": "2"}, {"2": "123"})
@@ -79,3 +110,11 @@ def test_ID_파일을_읽고_없는_파일과_못_찾은_곳은_뺀다(tmp_path)
 def test_내려받기_문서에도_장소_ID가_있으면_장소_링크():
     md = export_markdown(STATE, {k: {**v, "id": k} for k, v in PLACES.items()}, "2026-11-13", {k: "77" for k in PLACES})
     assert "[카카오맵에서 보기](https://place.map.kakao.com/77)" in md
+
+
+def test_칩_선택은_문장으로_덧붙는다():
+    from graph.present import compose_question
+    assert compose_question("2박 3일 여행", "제주", ["바다", "오름"], False) == "2박 3일 여행 (지역: 제주, 취향: 바다, 오름)"
+    assert compose_question("2박 3일 여행", None, [], False) == "2박 3일 여행"
+    assert compose_question("", None, ["산"], True) == "취향 추가: 산"
+    assert compose_question("점심 빼 줘", None, ["산"], True) == "점심 빼 줘 취향 추가: 산"

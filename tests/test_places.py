@@ -30,7 +30,7 @@ def test_뒤_단계가_쓰는_칸을_모두_채운다():
     r = search_places("부산 낙곱새", region="부산", retriever=FakeRetriever(_ok("1", "2")))
     assert r["ok"] and r["count"] == 2 and r["top_score"] == 0.9 and r["took_ms"] == 12.3
     first = r["results"][0]
-    assert set(first) == {"id", "title", "type", "region", "addr", "lat", "lon", "modified", "is_cafe", "snippet", "score", "access", "pet"}
+    assert set(first) == {"id", "title", "type", "region", "addr", "lat", "lon", "modified", "is_cafe", "category", "snippet", "score", "access", "pet"}
     assert (first["title"], first["lat"], first["lon"]) == ("개미집 본점", 35.1, 129.03)   # 이름 · 좌표는 검색기가 아니라 저장된 장소에서
 
 

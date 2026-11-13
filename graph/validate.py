@@ -37,7 +37,7 @@ def _recheck(ids: list, stored: dict, detail) -> dict:
 
 def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None) -> list:
     """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다."""
-    out, seen = [], set()
+    out, seen, museums = [], set(), 0
     limit = config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM)
     days = course.get("days", [])
     if dates and [d["date"] for d in days] != dates:
@@ -58,6 +58,10 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                 out.append(_v("slot_type", f"{s['slot']} 칸에는 {'/'.join(want)} 유형만 넣을 수 있습니다. {c.get('title')}({c.get('type')}) 은(는) 맞지 않습니다.", cid, d["date"], s["slot"]))
             if s["slot"] in ("점심", "저녁") and c.get("is_cafe"):   # 카페는 식사 자리가 아니라 "근처 카페 추천"으로 따로 둔다
                 out.append(_v("cafe_meal", f"{s['slot']} 칸에는 식당을 넣어야 합니다. {c.get('title')} 은(는) 카페입니다.", cid, d["date"], s["slot"]))
+            if c.get("category") == config.MUSEUM_CLASS:   # 박물관류는 날씨와 상관없이 코스 전체에서 MUSEUM_MAX 곳까지
+                museums += 1
+                if museums > config.MUSEUM_MAX:
+                    out.append(_v("museum_limit", f"박물관 · 미술관 · 전시관은 코스에 {config.MUSEUM_MAX}곳만 넣을 수 있습니다. {c.get('title')} 은(는) 다른 종류로 바꾸세요.", cid, d["date"], s["slot"]))
             if cid in seen:
                 out.append(_v("duplicate", f"{c.get('title')} 이(가) 코스에 두 번 들어 있습니다.", cid, d["date"], s["slot"]))
             seen.add(cid)

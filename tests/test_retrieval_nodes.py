@@ -127,6 +127,13 @@ def test_시군이_주소와_맞으면_거르고_안_맞으면_지역_전체로_
     assert out["request"]["notes"] == ["place_unmatched"]
 
 
+def test_장소가_지역_이름_자체면_시_구로_거르지_않는다():
+    # 왜: "부산 여행"이 "부산진구"로 좁혀지던 버그의 회귀 방지. 어디: 지역 이름 판별.
+    h = Harness()
+    _, out, _ = run(h, areas={"부산": {"부산진구", "해운대구"}}, region="부산", place="부산")
+    assert {s["area"] for s in h.searches} == {None} and out["request"]["notes"] == []
+
+
 def test_검색이_실패해도_멈추지_않고_사유를_알린다():
     h = Harness(search=lambda types: {"ok": False, "reason": "색인 없음"})
     path, out, _ = run(h)

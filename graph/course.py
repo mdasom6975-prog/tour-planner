@@ -23,7 +23,8 @@ DRAFT_SYSTEM = """당신은 국내 여행 코스 플래너입니다.
 - 휴무 표에 그 날짜가 휴무로 적힌 장소는 그 날 넣지 않습니다. '확인 필요'로 적힌 장소는 쓸 수 있습니다.
 - 비 · 눈이 오는 날은 실내 위주로 짜고, 그 이유를 rain_reason 에 한 줄로 적습니다. 그런 날이 없으면 빈 문자열입니다.
 - 날씨 숫자는 주어진 값만 옮겨 적고, 새로 계산하지 않습니다.
-- 부가 코스(backup)는 <부가 코스 후보> 에서 2~3곳을 골라, 비나 눈이 올 때 가볼 만한 이유를 적습니다. 본 코스에 쓴 장소는 고르지 않습니다.
+- 부가 코스(backup)는 <부가 코스 후보> 와 <카페 후보> 에서 2~3곳을 골라, 비나 눈이 올 때 가볼 만한 이유를 적습니다. 본 코스에 쓴 장소와 cafes 에 고른 카페는 고르지 않고, 공연장 · 문화센터 · 도서관 · 카페 같은 서로 다른 종류를 섞습니다.
+- [박물관류] 표시가 붙은 장소(박물관 · 미술관 · 전시관)는 날씨와 상관없이 본 코스와 부가 코스를 합쳐 1곳만 씁니다.
 - 지정한 JSON 형식으로만 답합니다."""
 
 
@@ -31,7 +32,8 @@ def _view(c: dict) -> str:
     # 왜: 소개글에 닫는 태그가 들어 있으면 지시문 영역으로 빠져나올 수 있어 태그 글자를 지운다. 어디: LLM 에 보내는 후보 한 줄.
     # 교안: PRD 11번 간접 인젝션. 반려동물 가능 여부는 저장된 값을 그대로 보여 준다(취향 · 동행 반영용).
     pet = f' | 반려동물: {c["pet"].get("범위")}' if c.get("pet") and c["pet"].get("범위") else ""
-    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
+    museum = " | [박물관류]" if c.get("category") == config.MUSEUM_CLASS else ""
+    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
 
 
 def _day_lines(dates: list, weather: dict) -> list:
@@ -58,22 +60,31 @@ def _rest_lines(table: dict, titles: dict) -> list:
 
 
 def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
-    """LLM 이 낸 Course 를 State 에 넣을 dict 로 정리한다. 부가 코스는 실내 후보 밖 · 본 코스와 겹치는 id 를 코드가 버린다."""
+    """LLM 이 낸 Course 를 State 에 넣을 dict 로 정리한다. 부가 코스 · 카페 추천은 후보 밖 · 본 코스와 겹치는 id 를 코드가 버린다."""
     used = {s.content_id for d in got.days for s in d.slots}
-    # 왜: 부가 코스는 "실내 후보 중에서만" 고르는 규칙이라 후보 밖 · 본 코스와 겹치는 id 는 코드가 버린다. 어디: LLM 결과 정리.
-    # 교안: PRD F3 부가 코스 — 실내(문화시설) 후보 중에서 고른다. 한계: 실내 여부를 유형으로만 본다.
-    indoor_ids, backup, seen = {c["id"] for c in indoor}, [], set()
-    for b in got.backup:
-        if b.content_id in indoor_ids and b.content_id not in used and b.content_id not in seen and len(backup) < config.BACKUP_MAX:
-            seen.add(b.content_id)
-            backup.append({"content_id": b.content_id, "reason": _clean(b.reason)[:200]})
-    # 왜: 카페 추천도 "카페 후보 안에서만 · 본 코스와 겹치지 않게 · 정해진 수만" 코드가 다시 거른다. 어디: LLM 결과 정리.
+    # 왜: 카페 추천은 "카페 후보 안에서만 · 본 코스와 겹치지 않게 · 정해진 수만" 코드가 다시 거른다. 어디: LLM 결과 정리.
     # 교안: 직접 대응 없음(2026-11-13 결정: 카페는 점심 · 저녁 칸이 아니라 따로 추천).
     cafe_ids, picked, seen_cafe = {c["id"] for c in cafes or []}, [], set()
     for c in got.cafes:
         if c.content_id in cafe_ids and c.content_id not in used and c.content_id not in seen_cafe and len(picked) < config.CAFE_PICKS:
             seen_cafe.add(c.content_id)
             picked.append({"content_id": c.content_id, "reason": _clean(c.reason)[:200]})
+    # 왜: 부가 코스는 "실내(문화시설) + 카페 후보 중에서만" 고르고, 박물관류는 본 코스와 합쳐 MUSEUM_MAX 곳을 넘지 않게 코드가 버린다. 어디: LLM 결과 정리.
+    # 교안: PRD F3 부가 코스. 한계: 실내 여부를 분류(문화시설 · 카페)로만 본다.
+    pool = {c["id"]: c for c in [*indoor, *(cafes or [])]}
+    museum_ids = {i for i, c in pool.items() if c.get("category") == config.MUSEUM_CLASS}
+    museums = len(used & museum_ids)
+    backup, seen = [], set()
+    for b in got.backup:
+        i = b.content_id
+        if i not in pool or i in used or i in seen or i in seen_cafe or len(backup) >= config.BACKUP_MAX:
+            continue
+        if i in museum_ids:
+            if museums >= config.MUSEUM_MAX:
+                continue
+            museums += 1
+        seen.add(i)
+        backup.append({"content_id": i, "reason": _clean(b.reason)[:200]})
     course = {"days": [{"date": d.date, "slots": [{"slot": s.slot, "content_id": s.content_id, "reason": _clean(s.reason)[:200]}
                                                   for s in d.slots]} for d in got.days],
               "rain_reason": _clean(got.rain_reason)[:200], "backup": backup, "cafes": picked}
