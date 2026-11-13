@@ -106,3 +106,4 @@ EVAL_K = 10              # Recall@k · nDCG@k 의 k (화면에 보이는 결과 
 # 교안: RAG 실습1 Q6(가중치 0.3 / 0.5 / 0.7) · Q7(재정렬 후보 수). 1.0 은 BM25 를 뺀 경우로, 기준선에서 임베딩 단독이 합침보다 높아 추가했다.
 EVAL_W_DENSE_GRID = [0.3, 0.5, 0.7, 1.0]
 EVAL_RERANK_CAND_GRID = [20, 30]
+EVAL_EMBED_ALT = "text-embedding-3-small"   # 임베딩 모델 비교(3-5b)의 상대. OpenAI API 라 본문과 질문이 밖으로 나간다

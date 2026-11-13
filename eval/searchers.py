@@ -10,12 +10,12 @@ from rag.rerank import Reranker
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def make_searchers(places: list, encoder=None, scorer=None) -> tuple:
+def make_searchers(places: list, encoder=None, scorer=None, model_name: str | None = None) -> tuple:
     """({"bm25" · "dense" · "hybrid" · "rerank": search(query, k, region, today)}, dense) 를 돌려준다."""
     # 왜: Retriever 를 쓰지 않고 네 검색기를 직접 조립한다. 단계별 결과가 따로 필요하고, 벡터 폴더를 평가용으로 바꿔야 실제 색인을 건드리지 않는다. 어디: eval/ 전체.
     # 교안: RAG 실습1 Q7 — BM25 / Dense / Hybrid / +Rerank 네 가지를 같은 질문으로 돌려 비교하던 구성.
     bm25 = Bm25Index(places)
-    dense = DenseIndex(places, index_dir=ROOT / config.EVAL_INDEX_DIR, encoder=encoder)
+    dense = DenseIndex(places, model_name=model_name, index_dir=ROOT / config.EVAL_INDEX_DIR, encoder=encoder)   # 벡터 파일은 모델 이름별로 따로 생긴다
     hybrid = HybridIndex(bm25, dense)
     reranker = Reranker(hybrid, places, scorer=scorer)
     searchers = {
