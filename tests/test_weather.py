@@ -1,7 +1,10 @@
 """tools/weather.py 의 get_weather 를 가짜 응답으로 확인한다. 네트워크를 쓰지 않는다."""
 import pytest
 
-from tools.weather import get_weather
+import requests
+
+import config
+from tools.weather import fetch_open_meteo, get_weather
 
 TODAY = "2026-11-13"
 BUSAN = (35.18, 129.08)
@@ -95,3 +98,49 @@ def test_잘못된_입력은_호출_전에_거른다(lat, lon, dates):
     fake = FakeFetch(ROWS)
     r = get_weather(lat, lon, dates, fetch=fake, today=TODAY)
     assert r["ok"] is False and r["reason"] and fake.calls == []
+
+
+class FakeResponse:
+    def __init__(self, status=200, body=None):
+        self.status_code, self.body = status, body or {"daily": {"time": []}}
+
+    def json(self):
+        return self.body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
+
+class FakeGet:
+    """requests.get 흉내. 정해 둔 순서대로 예외를 던지거나 응답을 돌려준다."""
+    def __init__(self, *outcomes):
+        self.outcomes, self.calls = list(outcomes), 0
+
+    def __call__(self, url, params, timeout):
+        self.calls += 1
+        out = self.outcomes.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
+
+
+@pytest.mark.parametrize("first", [requests.Timeout("느림"), requests.ConnectionError("끊김"), FakeResponse(503)])
+def test_잠깐_끊기면_한_번_더_불러_받는다(first):
+    get = FakeGet(first, FakeResponse(200, {"daily": {"time": ["2026-11-14"]}}))
+    assert fetch_open_meteo(35.1, 129.0, "2026-11-14", "2026-11-14", get=get) == {"daily": {"time": ["2026-11-14"]}}
+    assert get.calls == 2
+
+
+def test_계속_죽어_있으면_정해진_횟수만_부르고_실패한다():
+    get = FakeGet(*[requests.Timeout("느림")] * 5)
+    r = get_weather(*BUSAN, ["2026-11-14"], today=TODAY, fetch=lambda *a: fetch_open_meteo(*a, get=get))
+    assert r == {"ok": False, "reason": "날씨를 가져오지 못했습니다: Timeout"}
+    assert get.calls == config.WEATHER_RETRIES + 1
+
+
+def test_잘못된_요청은_다시_부르지_않는다():
+    get = FakeGet(FakeResponse(400), FakeResponse(200))
+    with pytest.raises(requests.HTTPError):
+        fetch_open_meteo(35.1, 129.0, "2026-11-14", "2026-11-14", get=get)
+    assert get.calls == 1

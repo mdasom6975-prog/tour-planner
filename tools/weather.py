@@ -11,14 +11,25 @@ from tools.geo import _point
 SOURCE = "Open-Meteo"
 
 
-def fetch_open_meteo(lat: float, lon: float, start: str, end: str) -> dict:
-    """실제 호출. 실패하면 예외를 던진다(get_weather 가 받아 결과로 바꾼다)."""
+def fetch_open_meteo(lat: float, lon: float, start: str, end: str, get=None) -> dict:
+    """실제 호출. 끝내 실패하면 예외를 던진다(get_weather 가 받아 결과로 바꾼다)."""
     import requests
 
-    res = requests.get(config.WEATHER_URL, timeout=config.WEATHER_TIMEOUT_SEC, params={
-        "latitude": lat, "longitude": lon, "daily": config.WEATHER_DAILY, "timezone": "Asia/Seoul", "start_date": start, "end_date": end})
-    res.raise_for_status()
-    return res.json()
+    get = get or requests.get
+    params = {"latitude": lat, "longitude": lon, "daily": config.WEATHER_DAILY, "timezone": "Asia/Seoul", "start_date": start, "end_date": end}
+    # 왜: 잠깐 끊긴 것은 한 번 더 부르면 풀린다. 요청이 잘못된 경우(4xx)는 다시 불러도 같으므로 바로 끝낸다. 어디: 실제 호출.
+    # 교안: 3일차 Part2 "실패도 결과로". 오래 죽어 있으면 여기서도 못 살리므로, 그때는 그래프가 "날씨를 가져오지 못했습니다" 로 알리고 코스를 짠다.
+    for attempt in range(config.WEATHER_RETRIES + 1):
+        try:
+            res = get(config.WEATHER_URL, params=params, timeout=config.WEATHER_TIMEOUT_SEC)
+            if res.status_code < 500:
+                res.raise_for_status()
+                return res.json()
+            error = RuntimeError(f"HTTP {res.status_code}")
+        except (requests.ConnectionError, requests.Timeout) as e:
+            error = e
+        if attempt == config.WEATHER_RETRIES:
+            raise error
 
 
 def _blank(day: str, note: str) -> dict:

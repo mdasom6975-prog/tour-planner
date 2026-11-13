@@ -116,5 +116,7 @@ SNIPPET_CHARS = 200        # search_places 가 돌려주는 소개 발췌 길이
 # 교안: 3일차 day3_tools.py 의 get_weather 와 같은 Open-Meteo(키 없음). 눈(snowfall_sum)은 "비나 눈이 오면 갈 곳" 요구로 추가했다.
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 WEATHER_DAILY = "temperature_2m_max,temperature_2m_min,precipitation_probability_max,snowfall_sum"
-WEATHER_TIMEOUT_SEC = 10
+# 2026-11-13 실제 호출: 응답 0.63~0.70초, 예보는 오늘 포함 16일(17일째는 서버가 400 으로 거절). 같은 날 약 20분 동안 서버가 응답하지 않았다.
+WEATHER_TIMEOUT_SEC = 5      # 평소의 7배쯤. 한 번 더 시도하므로 서버가 죽었을 때 최대 10초를 기다린다
+WEATHER_RETRIES = 1          # 연결 실패 · 시간 초과 · 서버 오류(5xx)일 때 다시 시도하는 횟수
 WEATHER_FORECAST_DAYS = 16   # 오늘을 포함해 예보가 나오는 일수
