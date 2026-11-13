@@ -3,10 +3,12 @@
 노드 안은 아직 비어 있다. 실행 기록 한 줄만 남기고 State 를 그대로 넘긴다. Streamlit 을 알지 못한다.
 """
 import time
+from datetime import date
 
 from langgraph.graph import END, START, StateGraph
 
 import config
+from graph.parse import ask_back_update, parse_update
 from graph.state import State
 from harness.trace import Trace
 
@@ -61,11 +63,14 @@ def _count(key: str):
     return update
 
 
-def build_graph(trace: Trace | None = None, checkpointer=None):
-    """노드 뼈대를 잇는다. trace 는 바깥에서 받는다(평가 · 테스트가 바꿔 끼운다)."""
+def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, today: str | None = None):
+    """노드를 잇는다. trace · llm · today 는 바깥에서 받는다(평가 · 테스트가 가짜로 바꿔 끼운다)."""
     trace = trace or Trace(save=False)
+    today = today or date.today().isoformat()
     g = StateGraph(State)
-    updates = {"transform_query": _count("search"), "draft_course": _count("draft")}
+    updates = {"transform_query": _count("search"), "draft_course": _count("draft"), "ask_back": ask_back_update}
+    if llm is not None:   # llm 이 없으면 parse_request 는 뼈대(5-1)처럼 State 의 request 를 그대로 쓴다
+        updates["parse_request"] = parse_update(llm, today, trace)
     for name in NODES:
         g.add_node(name, _make_node(name, trace, updates.get(name)))
     # fetch_context 의 날씨 · 축제 · 휴무 병렬 처리는 5-4에서 안쪽에 넣는다.

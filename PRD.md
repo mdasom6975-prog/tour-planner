@@ -325,7 +325,8 @@ tour-planner/
 - **끝남: 0 ~ 4단계.** 2-a · 2-b · 무장애/반려동물(A-4, A-5) · 데이터 백업 · 로그(L-1, L-2) 포함. `pytest` 107건 통과
 - **진행 중: 5단계 그래프.** 설계가 걸린 단계라 노드마다 설명 → 동의 → 하나씩 만든다
   - **5-1 뼈대 끝남 (2026-11-13):** `graph/state.py` · `graph/build.py`(노드 10개 + 분기 3곳, 안은 비어 있음) · `tests/test_graph_skeleton.py` 4건. `python -m pytest` 111건 통과. 그림은 `docs/graph_5-1.mmd`
-  - **다음: 5-2** `parse_request` + `ask_back`. 이후 5-3 검색 · 판정 · 포기, 5-4 `fetch_context`, 5-5 `draft_course` + `respond`
+  - **5-2 조건 이해 끝남 (2026-11-13):** `graph/schemas.py`(TripRequest) · `graph/parse.py`(parse_request · ask_back) · `graph/llm.py`(make_llm) · `config.MAX_TRIP_DAYS = 3`(임의 값). 가짜 LLM 테스트 13건, `python -m pytest` 124건 통과. **실제 모델 호출은 아직 해 보지 않았다.** 날짜가 없거나 틀려도 진행하고 `request["notes"]`에 사유를 남긴다 (지역 · 일수만 되묻는다). 시 · 군은 `place`에 글자만 뽑고 거르는 기능은 5-3
+  - **다음: 5-3** `retrieve`(시 · 군 거르기 포함) + `grade_documents` + `transform_query` + `abstain`. 이후 5-4 `fetch_context`, 5-5 `draft_course` + `respond`
 - 3단계 결과: 합침+재정렬 nDCG@10 0.863(고름 18건) · 0.824(확인 9건). 설정은 그대로(BGE-m3-ko · 가중치 0.5 · 후보 30). 표와 한계는 `eval/README.md`
 - 4단계 도구: `tools/geo.py`(distance_km) · `tools/places.py`(search_places · get_place_detail) · `tools/festivals.py`(search_festivals) · `tools/weather.py`(get_weather). 모두 평범한 함수이고 바깥 의존은 인자로 받는다
 

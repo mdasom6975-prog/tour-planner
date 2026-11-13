@@ -4,6 +4,7 @@ from typing import Annotated, TypedDict
 
 
 class State(TypedDict, total=False):
+    message: str         # 사용자가 입력한 문장 (parse_request 가 읽는다)
     request: dict        # parse_request 가 만든 조건 JSON. missing(빠진 조건 목록)을 함께 담는다
     candidates: list     # retrieve 가 찾은 후보 장소
     enough: bool         # grade_documents 판정: 조건에 맞는 후보가 충분한가
