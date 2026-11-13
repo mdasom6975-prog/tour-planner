@@ -108,3 +108,4 @@ EVAL_K = 10              # Recall@k · nDCG@k 의 k (화면에 보이는 결과 
 EVAL_W_DENSE_GRID = [0.3, 0.5, 0.7, 1.0]
 EVAL_RERANK_CAND_GRID = [20, 30]
 EVAL_EMBED_ALT = "text-embedding-3-small"   # 임베딩 모델 비교(3-5b)의 상대. OpenAI API 라 본문과 질문이 밖으로 나간다
+EARTH_RADIUS_KM = 6371.0   # 직선거리 계산에 쓰는 지구 반지름(평균값)
