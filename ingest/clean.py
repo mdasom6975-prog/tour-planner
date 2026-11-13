@@ -147,7 +147,7 @@ def _load(name: str) -> dict:
 
 
 DETAIL_TEXT_KEYS = ("overview", "homepage", "rest_text", "hours_text", "contact", "parking", "extra")
-DETAIL_REST_KEYS = ("rest_status", "rest_weekdays", "rest_note")
+DETAIL_REST_KEYS = ("rest_status", "rest_weekdays", "rest_nth", "rest_note")
 
 
 def detail_fields(type_id: str, common_item: dict | None, intro_item: dict | None) -> dict:
@@ -170,7 +170,7 @@ def detail_fields(type_id: str, common_item: dict | None, intro_item: dict | Non
     if fmap["rest"]:
         out.update(parse_rest(out["rest_text"]))
     else:
-        out.update({"rest_status": "not_applicable", "rest_weekdays": [], "rest_note": False})
+        out.update({"rest_status": "not_applicable", "rest_weekdays": [], "rest_nth": [], "rest_note": False})
     return out
 
 

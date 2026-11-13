@@ -52,9 +52,55 @@ def _only_weekdays(text: str) -> bool:
     return re.sub(r"[\s,·/~\-.및와과]", "", rest) == ""
 
 
+# 왜: "매월 둘째, 넷째 월요일" 처럼 몇째 주의 무슨 요일이 쉬는지 적은 문장은 요일만 뽑으면 틀리므로 몇째 주 값을 따로 뽑는다(저장 데이터 87곳). 어디: parse_rest 맨 앞.
+# 교안: 2일차 Part1 "형식은 코드로" — 정규식으로 읽을 수 있는 모양만 읽고, 한 문장에 요일이 둘 이상이거나 격주처럼 모호하면 읽지 않는다(unknown 유지).
+WEEK_WORDS = {"첫": 1, "둘": 2, "두": 2, "셋": 3, "세": 3, "넷": 4, "네": 4, "다섯": 5}
+NTH_SEGMENT = re.compile(r"매월|매달|첫째|둘째|셋째|넷째|다섯째|첫\s*번째|\d\s*번째|[1-5]\s*째|마지막\s*주")
+
+
+def _nth_rules(text: str):
+    """(규칙 목록, 나머지 조각) 또는 읽을 수 없으면 None. 규칙: {"weeks": [1, 3] (-1 = 마지막), "weekday": "월"}"""
+    if "격주" in text:
+        return None
+    main = re.sub(r"\([^)]*\)", " ", text)
+    main = re.sub(r"※.*", " ", main, flags=re.S)
+    rules, other = [], []
+    for seg in re.split(r"[/\n]", main):
+        seg = seg.strip()
+        if not seg:
+            continue
+        if not NTH_SEGMENT.search(seg):
+            other.append(seg)
+            continue
+        days = set(re.findall(rf"([{WEEK}])요일", seg))
+        if len(days) != 1:
+            return None   # 요일이 없거나 둘 이상이면 어느 주가 어느 요일인지 알 수 없다
+        day = days.pop()
+        prefix = seg[:seg.index(day + "요일")]
+        weeks = {WEEK_WORDS[w] for w in re.findall(r"(첫|둘|두|셋|세|넷|네|다섯)\s*(?:번)?\s*째", prefix)}
+        weeks |= {int(n) for n in re.findall(r"(?<!\d)([1-5])(?![\d일월])", prefix)}
+        if "마지막" in prefix:
+            weeks.add(-1)
+        if not weeks:
+            return None
+        rules.append({"weeks": sorted(weeks), "weekday": day})
+    return (rules, other) if rules else None
+
+
 def parse_rest(text: str) -> dict:
-    """결과: {"rest_status": always_open | weekly | unknown, "rest_weekdays": [...], "rest_note": bool}"""
+    """결과: {"rest_status": always_open | weekly | nth | unknown, "rest_weekdays": [...], "rest_nth": [...], "rest_note": bool}"""
     t = (text or "").strip()
+    parsed = _nth_rules(t) if t else None
+    if parsed:
+        rules, other = parsed
+        weekly = _weekdays("/".join(other))
+        # 공휴일 · 임시휴관 같은 다른 조건이나 괄호 · ※ 안내가 있으면 원문 확인을 권한다(확정하지 않는다).
+        note = bool(re.search(r"[(※]", t)) or any(not _only_weekdays(seg) for seg in other)
+        return {"rest_status": "nth", "rest_weekdays": weekly, "rest_nth": rules, "rest_note": note}
+    return {**_parse_basic(t), "rest_nth": []}
+
+
+def _parse_basic(t: str) -> dict:
 
     # 왜: 정보가 없으면 "연다" 고 가정하지 않는다. 어디: 빈 문장.
     # 교안: 3일차 03 가이드북 "없으면 '찾을 수 없음'" — 모르는 것을 아는 척하지 않는다.

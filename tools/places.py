@@ -49,7 +49,7 @@ def search_places(query: str, region: str | None = None, types: list | None = No
 # --- 실시간 재확인 (4-5b) ---------------------------------------------------
 TYPE_ID = {name: code for code, name in config.DETAIL_TYPES.items()}
 BASE_FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "image", "modified")
-DETAIL_FIELDS = ("overview", "homepage", "rest_text", "hours_text", "contact", "parking", "extra", "rest_status", "rest_weekdays", "rest_note")
+DETAIL_FIELDS = ("overview", "homepage", "rest_text", "hours_text", "contact", "parking", "extra", "rest_status", "rest_weekdays", "rest_nth", "rest_note")
 
 
 def _live_call(operation: str, params: dict) -> dict:
