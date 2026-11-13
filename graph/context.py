@@ -48,10 +48,10 @@ def _weather(fn, candidates: list, dates: list) -> dict:
                 "notice": " ".join(f"{_label(d)} 날씨 정보를 가져오지 못했습니다." for d in dates)}
     days = []
     for d in got["days"]:
-        # 왜: 비 · 눈 판정은 숫자 비교라 코드가 한다. 눈은 조금이라도 오면(snow_cm > 0) 눈 오는 날로 본다(2026-11-13 결정). 어디: 날짜별 판정.
+        # 왜: 비 · 눈 판정은 숫자 비교라 코드가 한다. 눈은 적설이 있거나(snow_cm > 0) 눈 예보(PTY 눈 · 중기 '눈' 문구, snow)면 눈 오는 날로 본다(2026-11-13 결정). 어디: 날짜별 판정.
         # 교안: PRD F3 "비 예보(강수 60% 이상)인 날은 실내 위주". 눈 기준은 PRD 에 없어 이번에 정했다.
         rainy = d["available"] and (d["rain_prob"] or 0) >= config.RAIN_PROB_THRESHOLD
-        snowy = d["available"] and (d.get("snow_cm") or 0) > 0
+        snowy = d["available"] and ((d.get("snow_cm") or 0) > 0 or bool(d.get("snow")))
         days.append({**d, "rainy": bool(rainy), "snowy": bool(snowy), "indoor": bool(rainy or snowy)})
     missing = [d["date"] for d in days if not d["available"]]
     return {"ok": True, "days": days, "unavailable": missing, "source": got.get("source"),

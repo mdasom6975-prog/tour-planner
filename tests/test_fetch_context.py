@@ -194,3 +194,10 @@ def test_그래프에서_조건_검색_판정_다음에_context가_채워진다(
     assert steps.index("fetch_context") == steps.index("grade_documents") + 1
     assert out["rest_table"]["관광지0"] == {"2026-11-23": "closed"}
     assert out["weather"]["ok"] and "area" in out
+
+
+def test_눈_예보_표시만_있어도_눈_오는_날():
+    from graph.context import _weather
+    day = {"date": "2026-11-17", "available": True, "temp_max": 5, "temp_min": 0, "rain_prob": 10, "snow_cm": None, "snow": True, "note": ""}
+    got = _weather(lambda la, lo, dates: {"ok": True, "days": [day], "source": "x"}, [{"lat": 37.5, "lon": 127.0}], ["2026-11-17"])
+    assert got["days"][0]["snowy"] and got["days"][0]["indoor"]
