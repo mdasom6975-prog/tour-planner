@@ -76,6 +76,11 @@ KAKAO_RADIUS_M = 100            # 이 반경 안의 후보만 본다
 KAKAO_CATEGORY_CODES = ("FD6", "CE7")  # 음식점 · 카페만 후보로 인정 (주차장이 걸린 사례 방지)
 KAKAO_SOLE_MAX_M = 50           # 이름이 달라도 업종이 맞는 후보가 하나뿐이고 이 안이면 같은 가게로 본다 (임시값, 표본 20곳)
 KAKAO_TIMEOUT_SEC = 10
+# 왜: 장소 ID 를 모으다 서버·키 문제가 나면 한도만 쓰므로 멈춘다. 어디: ingest/collect_kakao_ids.py.
+# 교안: DETAIL_MAX_CONSECUTIVE_FAILURES 와 같은 생각. 초당 호출 제한은 확인하지 못해 조금 쉰다. 일일 한도 수치는 카카오 앱 관리 [통계] > [쿼터] 에서 확인 전이다.
+KAKAO_DAILY_LIMIT = 100_000     # 일일 쿼터. 2026-11-13 사용자 확인 (앱 관리 [통계] > [쿼터]). 수치는 카카오가 바꿀 수 있다
+KAKAO_MAX_CONSECUTIVE_FAILURES = 5
+KAKAO_SLEEP_SEC = 0.1
 
 # --- 임베딩 ---
 # 왜: 글을 벡터로 바꿔 "뜻이 가까운" 장소를 찾는 모델이다. 이름을 여기 한 줄에 두어 평가 때 바꿔 끼운다. 어디: rag/dense.py.
