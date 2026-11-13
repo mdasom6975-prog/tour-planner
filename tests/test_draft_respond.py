@@ -131,12 +131,13 @@ def test_그래프_끝까지_가면_코스_답이_나온다():
             return {"region": "강릉", "days": 2, "start_date": D1}
         if schema is Grade:
             return {"relevant_ids": [l.split("|")[0].replace("id=", "").strip() for l in user.splitlines() if l.startswith("id=")], "reason": ""}
-        return course()
+        return course(days=[{"date": d, "slots": [{"slot": n, "content_id": i, "reason": "r"} for n, i in zip(config.COURSE_SLOTS, ids)]}
+                            for d, ids in ((D1, ["s0", "f0", "s1", "f1"]), (D2, ["s2", "f2", "s3", "f3"]))])
     weather = lambda lat, lon, dates: {"ok": True, "days": [{"date": d, "available": True, "temp_min": 1, "temp_max": 8, "rain_prob": 10, "snow_cm": 0.0, "note": ""} for d in dates], "source": "t"}
     festivals = lambda region, start, end: {"ok": True, "results": []}
     out = build_graph(Trace(save=False), llm=llm, today="2026-11-13", search=search, weather=weather, festivals=festivals).invoke({"message": "x"})
     steps = [e["step"] for e in out["trace"]]
-    assert steps[-3:] == ["draft_course", "validate_course", "respond"] and out["retries"]["draft"] == 1
+    assert steps[-3:] == ["draft_course", "validate_course", "respond"] and out["retries"]["draft"] == 1 and out["violations"] == []
     assert out["answer"]["kind"] == "course" and "## 11/21(토)" in out["answer"]["text"]
 
 

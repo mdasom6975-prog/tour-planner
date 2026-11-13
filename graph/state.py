@@ -17,6 +17,8 @@ class State(TypedDict, total=False):
     rest_table: dict     # fetch_context: {후보 id: {날짜: "closed" | "check"}} (영업일은 적지 않는다)
     course: dict         # draft_course 가 만든 일자별 배치
     course_error: str    # draft_course 가 쓰지 못했을 때의 오류 이름
+    rechecked: dict      # validate_course 가 관광공사에서 다시 받은 장소별 휴무 값 · 출처(live/stored) · 기준일
+    removed: list       # 재작성을 다 쓰고도 남아 코스에서 뺀 위반 장소
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
     answer: dict         # 끝에 나가는 값: 되묻기 · 찾지 못함 · 코스

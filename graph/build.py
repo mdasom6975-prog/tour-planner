@@ -13,6 +13,7 @@ from graph.course import draft_update, respond_update
 from graph.parse import ask_back_update, parse_update
 from graph.retrieval import abstain_update, grade_update, retrieve_update, transform_update
 from graph.state import State, retries_of
+from graph.validate import validate_update
 from harness.trace import Trace
 
 NODES = [
@@ -67,7 +68,7 @@ def _count(key: str):
 
 def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, today: str | None = None,
                 search=None, areas: dict | None = None,
-                weather=None, festivals=None, stored: dict | None = None):
+                weather=None, festivals=None, stored: dict | None = None, detail=None):
     """노드를 잇는다. trace · llm · today 는 바깥에서 받는다(평가 · 테스트가 가짜로 바꿔 끼운다)."""
     trace = trace or Trace(save=False)
     today = today or date.today().isoformat()
@@ -79,6 +80,7 @@ def build_graph(trace: Trace | None = None, checkpointer=None, *, llm=None, toda
         updates["grade_documents"] = grade_update(llm, trace)
         updates["transform_query"] = transform_update(llm, trace)
         updates["draft_course"] = draft_update(llm, trace)   # 코스 칸 채우기(5-5). 쓸 때마다 draft 횟수를 센다
+        updates["validate_course"] = validate_update(stored, detail, trace)   # 코드 검사 + 실시간 재확인(6단계)
         updates["respond"] = respond_update
     if weather is not None or festivals is not None:   # 둘 다 없으면 fetch_context 는 비어 있는 뼈대다
         updates["fetch_context"] = fetch_update(weather, festivals, stored, trace)

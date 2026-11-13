@@ -160,8 +160,11 @@ def _access_lines(access: dict) -> list:
     return [f"  · 무장애 — {name}: " + " / ".join(items) for name, items in access_detail(access)]
 
 
-def _facts(c: dict, day: str, rest: dict) -> list:
+def _facts(c: dict, day: str, rest: dict, rechecked: dict | None = None) -> list:
     out = [t for t in (pet_text(c.get("pet")), access_text(c.get("access"))) if t]
+    r = (rechecked or {}).get(c["id"])
+    if r:   # 왜: 휴무 판정에 쓴 값이 방금 받은 것인지 저장분인지 밝힌다. 어디: 6단계 재확인 뒤 카드.
+        out.append("정보 방금 확인" if r["source"] == "live" else f"정보 {r['as_of'] or '날짜 미상'} 기준(저장분)")
     mark = rest.get(c["id"], {}).get(day)
     if mark == "closed":
         out.append("이 날 휴무로 보임")
@@ -202,7 +205,7 @@ def respond_update(state) -> dict:
                 got = distance_km(prev, c)
                 leg = round(got["km"], 1) if got["ok"] else None
             prev = c
-            facts = _facts(c, d["date"], rest)
+            facts = _facts(c, d["date"], rest, state.get("rechecked"))
             slots_out.append({"slot": s["slot"], "id": c["id"], "title": c.get("title"), "type": c.get("type"), "addr": c.get("addr"),
                               "lat": c.get("lat"), "lon": c.get("lon"), "leg_km": leg, "facts": facts, "access": access_detail(c.get("access")),
                               "reason": s["reason"]})
@@ -238,6 +241,11 @@ def respond_update(state) -> dict:
         notices.append(f"'{req.get('place')}'은(는) 시·군 단위로 찾지 못해 {req.get('region')} 전체에서 찾았습니다.")
     if dropped:
         notices.append(f"후보에 없는 장소 {dropped}곳은 뺐습니다.")
+    # 왜: 재작성을 다 쓰고도 규칙에 맞지 않은 장소는 코스에서 빼고 숨기지 않고 알린다. 어디: 6단계 validate_course 가 남긴 removed.
+    # 교안: PRD 10번 "위반 장소 제거 + '확인 필요' 표시".
+    for v in state.get("removed") or []:
+        name = (cands.get(v["id"]) or {}).get("title") or v["id"]
+        notices.append(f"확인 필요: {_label(v['date'])} {v['slot']} {name} — 규칙에 맞지 않아 뺐습니다({v['rule']}).")
     if notices:
         lines += ["", *[f"- {n}" for n in notices]]
     return {"answer": {"kind": "course", "text": "\n".join(lines), "days": days_out, "backup": backup_out, "notices": notices}}
