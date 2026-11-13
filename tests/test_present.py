@@ -57,3 +57,25 @@ def test_지도_중심과_확대는_핀_범위에서_정한다():
     far = [("d", [{"lat": 33.2, "lon": 126.2}, {"lat": 38.0, "lon": 129.4}])]
     assert map_view(far)[2] == 7                                              # 아주 넓으면 최소 7
     assert map_view([("d", [{"lat": 37.0, "lon": 127.0}])])[2] == 15          # 한 곳이면 최대 15
+
+
+def test_장소_ID가_있으면_카카오_장소_링크_하나_없으면_기존_두_링크():
+    from graph.present import place_links
+    with_id = place_links({**PLACES["2"], "id": "2"}, {"2": "123"})
+    assert with_id == [("카카오맵에서 보기", "https://place.map.kakao.com/123")]
+    without = place_links({**PLACES["2"], "id": "2"}, {})
+    assert [t for t, _ in without] == ["지도에서 보기", "가게 정보"]
+    assert [t for t, _ in place_links({"id": "9", "type": "관광지", "title": "공원", "lat": 1, "lon": 2}, {"2": "123"})] == ["지도에서 보기"]
+
+
+def test_ID_파일을_읽고_없는_파일과_못_찾은_곳은_뺀다(tmp_path):
+    from graph.present import load_kakao_ids
+    assert load_kakao_ids(tmp_path / "none.jsonl") == {}
+    f = tmp_path / "ids.jsonl"
+    f.write_text('{"contentid":"1","place_id":"11","date":"d"}\n{"contentid":"2","place_id":null,"reason":"후보 없음","date":"d"}\n', encoding="utf-8")
+    assert load_kakao_ids(f) == {"1": "11"}
+
+
+def test_내려받기_문서에도_장소_ID가_있으면_장소_링크():
+    md = export_markdown(STATE, {k: {**v, "id": k} for k, v in PLACES.items()}, "2026-11-13", {k: "77" for k in PLACES})
+    assert "[카카오맵에서 보기](https://place.map.kakao.com/77)" in md

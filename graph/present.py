@@ -3,8 +3,12 @@
 사실(이름 · 주소 · 거리 · 날짜 · 휴무)은 respond 가 만든 값을 그대로 옮기고 여기서 새로 판정하지 않는다.
 관광공사 소개글은 고치지 않고 앞부분만 발췌한다(저작권 정책, PRD 11번).
 """
+import json
 import math
+from pathlib import Path
 from urllib.parse import quote
+
+import config
 
 POLICY_URL = "https://api.visitkorea.or.kr/#/useServiceGuide/2"
 CREDIT = "출처 : ⓒ한국관광공사"
@@ -30,6 +34,29 @@ def shop_link(place: dict):
     road = str(place.get("addr", "")).split("(")[0].strip()
     query = road if place.get("title", "") in road else f"{road} {place.get('title', '')}"
     return "https://map.kakao.com/link/search/" + quote(query)
+
+
+def load_kakao_ids(path: Path) -> dict:
+    # 왜: 3단계에서 찾아 둔 카카오 장소 ID 를 {contentid: place_id} 로 읽는다. 어디: 링크 결정 입력.
+    # 교안: 3일차 04 일정비서가 data/calendar.json 을 읽던 방식 — 파일이 없으면 빈 값(옛 링크로 돌아간다).
+    if not Path(path).exists():
+        return {}
+    with Path(path).open(encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    return {r["contentid"]: r["place_id"] for r in rows if r.get("place_id")}
+
+
+def place_links(place: dict, kakao_ids: dict | None = None) -> list:
+    """[(글자, 주소)]. 장소 ID 가 있으면 카카오 장소 페이지 하나(정보+위치), 없으면 기존 지도 · 가게 정보 링크."""
+    # 왜: 장소 페이지는 가게 정보와 정확한 위치를 함께 보여 준다. ID 가 없으면 지금 링크를 그대로 둔다. 어디: 카드 · 내려받기 문서.
+    # 교안: 직접 대응 없음. 설계 원칙 "사실은 코드가" — ID 는 좌표 · 이름 일치로 코드가 정한 값만 쓴다.
+    pid = (kakao_ids or {}).get(place.get("id"))
+    if pid:
+        return [("카카오맵에서 보기", config.KAKAO_PLACE_PAGE_URL + str(pid))]
+    links = [("지도에서 보기", map_link(place))]
+    if shop_link(place):
+        links.append(("가게 정보", shop_link(place)))
+    return links
 
 
 def weather_line(w: dict | None) -> str:
@@ -76,7 +103,7 @@ def map_view(routes: list) -> tuple | None:
     return lat, (min(lons) + max(lons)) / 2, max(7, min(15, int(math.log2(560 / span))))
 
 
-def export_markdown(state: dict, places: dict, as_of: str) -> str:
+def export_markdown(state: dict, places: dict, as_of: str, kakao_ids: dict | None = None) -> str:
     """코스를 마크다운 문서로. 출처 문구와 저작권 정책 링크를 붙인다(PRD F4)."""
     ans, weather = state.get("answer") or {}, weather_by_date(state)
     lines = ["# 어디갈래 여행 코스", "", summary_line(state), ""]
@@ -93,7 +120,8 @@ def export_markdown(state: dict, places: dict, as_of: str) -> str:
                 lines.append(f"  - 무장애 — {name}: " + " / ".join(items))
             if place.get("overview"):
                 lines.append(f"- 소개(관광공사 원문 발췌): {excerpt(place['overview'])}")
-            lines.append(f"- [지도에서 보기]({map_link(place or s)})" + (f" · 정보 기준일 {place['modified']}" if place.get("modified") else ""))
+            first = place_links(place, kakao_ids)[0] if place.get("id") in (kakao_ids or {}) else ("지도에서 보기", map_link(place or s))
+            lines.append(f"- [{first[0]}]({first[1]})" + (f" · 정보 기준일 {place['modified']}" if place.get("modified") else ""))
             lines.append("")
     if ans.get("cafes"):
         lines += ["## 근처 카페 추천", ""]

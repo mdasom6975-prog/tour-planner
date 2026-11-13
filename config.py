@@ -71,6 +71,7 @@ TOURAPI_SLEEP_SEC = 0.1
 # --- 카카오 로컬 API (지도 링크용 장소 ID 찾기) ---
 # 왜: 같은 이름의 다른 지역 가게가 섞이지 않게, 가진 좌표 반경 안에서만 찾는다. 어디: ingest/match_kakao_place.py.
 # 교안: 직접 대응 없음. 값은 2026-11-13 음식점 20곳 실호출에서 정했다 (같은 가게의 최대 거리 44m, 영문↔한글 표기 차이는 0~41m).
+KAKAO_PLACE_PAGE_URL = "https://place.map.kakao.com/"   # 장소 ID 를 붙이면 가게 정보 + 위치 페이지
 KAKAO_LOCAL_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 KAKAO_RADIUS_M = 100            # 이 반경 안의 후보만 본다
 KAKAO_CATEGORY_CODES = ("FD6", "CE7")  # 음식점 · 카페만 후보로 인정 (주차장이 걸린 사례 방지)

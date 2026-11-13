@@ -4,6 +4,7 @@
 실행:  source .venv/bin/activate 뒤에 streamlit run app.py  (가상환경 밖에서 띄우면 kiwipiepy 를 못 찾는다)
 """
 import re
+from pathlib import Path
 import uuid
 from datetime import datetime
 
@@ -12,7 +13,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 import config
-from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, map_link, map_view, route_by_day, shop_link,
+from graph.present import (CREDIT, DAY_COLORS, POLICY_URL, excerpt, export_markdown, load_kakao_ids, map_view, place_links, route_by_day,
                            summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
@@ -48,6 +49,16 @@ def load_index(data_version: float) -> Retriever:
     # 왜: Streamlit 은 버튼을 누를 때마다 파일 전체를 다시 실행한다. 색인과 모델(준비 14초)을 매번 만들 수 없어 한 번만 만든다. 어디: 색인 준비.
     # 교안: 4일차 PRD "결과 캐시". 정제 파일의 수정 시각을 인자로 받아, 데이터가 바뀌면 저절로 다시 만든다.
     return Retriever.from_file()
+
+
+KAKAO_IDS_PATH = Path(__file__).resolve().parent / "data" / "raw" / "kakao_place_ids.jsonl"
+
+
+@st.cache_resource
+def kakao_ids(file_version: float) -> dict:
+    # 왜: 장소 ID 파일은 화면을 다시 그릴 때마다 읽지 않고, 파일이 바뀌면(수정 시각) 다시 읽는다. 어디: 카드 링크.
+    # 교안: load_index 와 같은 방식(수정 시각을 캐시 열쇠로).
+    return load_kakao_ids(KAKAO_IDS_PATH)
 
 
 @st.cache_resource
@@ -173,9 +184,8 @@ def draw_slot(slot: dict, place: dict) -> None:
                         st.markdown(f"**{name}**")
                         for item in items:
                             st.markdown(f"- {plain(item)}")
-            links = f"[지도에서 보기]({map_link(place or slot)})"
-            if place and shop_link(place):
-                links += f" · [가게 정보]({shop_link(place)})"
+            ids = kakao_ids(KAKAO_IDS_PATH.stat().st_mtime if KAKAO_IDS_PATH.exists() else 0.0)
+            links = " · ".join(f"[{t}]({u})" for t, u in place_links(place or slot, ids))
             st.caption(f"정보 기준일 {place.get('modified', '정보 없음')} · {links} · {CREDIT}")
 
 
@@ -222,7 +232,7 @@ def draw_course(final: dict, index: Retriever) -> None:
     for note in ans.get("notices") or []:
         st.info(plain(note))
     as_of = datetime.fromtimestamp(PLACES_PATH.stat().st_mtime).strftime("%Y-%m-%d")
-    st.download_button("코스 내려받기 (.md)", export_markdown(final, by_id, as_of), file_name="어디갈래_코스.md", mime="text/markdown")
+    st.download_button("코스 내려받기 (.md)", export_markdown(final, by_id, as_of, kakao_ids(KAKAO_IDS_PATH.stat().st_mtime if KAKAO_IDS_PATH.exists() else 0.0)), file_name="어디갈래_코스.md", mime="text/markdown")
 
 
 def draw_results(index: Retriever) -> None:
