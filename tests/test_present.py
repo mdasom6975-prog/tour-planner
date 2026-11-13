@@ -1,0 +1,50 @@
+"""graph/present.py(요약 · 지도 경로 · 내려받기 문서)를 확인한다. Streamlit · 네트워크를 쓰지 않는다. (14번 7단계)"""
+from graph.present import CREDIT, POLICY_URL, export_markdown, excerpt, map_link, route_by_day, shop_link, summary_line, weather_line
+
+SLOT = {"slot": "오전", "id": "1", "title": "안목해변", "type": "관광지", "addr": "강릉시 창해로", "lat": 37.77, "lon": 128.95, "leg_km": None,
+        "facts": ["반려동물 동반 가능(전 구역)", "정보 방금 확인"], "access": [("이동 · 시설", ["접근로: 경사로"])], "reason": "바다 산책"}
+SLOT2 = {**SLOT, "slot": "점심", "id": "2", "title": "초당두부", "type": "음식점", "lat": 37.79, "lon": 128.91, "leg_km": 4.1, "facts": [], "access": []}
+STATE = {"request": {"region": "강릉", "place": "강릉", "companions": "부모님", "preferences": ["걷는 건 적게"]},
+         "weather": {"source": "기상청 중기예보", "days": [{"date": "2026-11-21", "available": True, "temp_min": 2, "temp_max": 10, "rain_prob": 10, "rainy": False, "snowy": False}]},
+         "answer": {"kind": "course", "days": [{"date": "2026-11-21", "slots": [SLOT, SLOT2]}, {"date": "2026-11-22", "slots": [{**SLOT, "lat": None}]}],
+                    "backup": [{"title": "오죽헌", "type": "문화시설", "reason": "실내 전시", "addr": "강릉시 율곡로"}], "notices": ["이 기간에 등록된 축제가 없습니다."]}}
+PLACES = {"1": {"overview": "소개 " * 100, "modified": "2026-10-01", "title": "안목해변", "lat": 37.77, "lon": 128.95},
+          "2": {"overview": "두부 마을", "modified": "2026-09-01", "title": "초당두부", "type": "음식점", "addr": "강릉시 초당동 (초당)", "lat": 37.79, "lon": 128.91}}
+
+
+def test_요약_한_줄은_지역_기간_동행_취향():
+    assert summary_line(STATE) == "강릉 · 2026-11-21 ~ 2026-11-22 · 부모님 · 걷는 건 적게"
+    assert summary_line({"request": {"region": "부산", "place": "해운대"}, "answer": {"days": []}}) == "부산 해운대"
+
+
+def test_날씨_줄은_값이_있을_때만_숫자를_쓴다():
+    assert weather_line(STATE["weather"]["days"][0]) == "최저 2~최고 10℃ · 강수확률 10% · 비·눈 예보 없음"
+    assert weather_line(None) == "날씨 정보를 가져오지 못했습니다" and weather_line({"available": False}) == "날씨 정보를 가져오지 못했습니다"
+
+
+def test_지도_경로는_좌표가_있는_장소만_방문_순서_번호로():
+    routes = route_by_day(STATE["answer"])
+    assert [(d, [p["n"] for p in pts]) for d, pts in routes] == [("2026-11-21", [1, 2]), ("2026-11-22", [])]
+
+
+def test_지도_링크는_받은_좌표를_쓰고_쉼표는_이름에서_뺀다():
+    assert map_link({"title": "가,나", "lat": 37.5, "lon": 127.1}) == "https://map.kakao.com/link/map/%EA%B0%80%20%EB%82%98,37.5,127.1"
+    assert shop_link({"type": "관광지"}) is None and "%EC%B4%88%EB%8B%B9" in shop_link(PLACES["2"])
+
+
+def test_발췌는_원문_앞부분만_자르고_줄바꿈을_정리한다():
+    assert excerpt("가\n나 다") == "가 나 다" and excerpt("가" * 200).endswith("…") and len(excerpt("가" * 200)) == 141
+
+
+def test_내려받기_문서에_출처와_정책_링크와_기준일이_붙는다():
+    md = export_markdown(STATE, PLACES, "2026-11-13")
+    assert md.startswith("# 어디갈래 여행 코스") and "## 2026-11-21" in md and "날씨: 최저 2~최고 10℃" in md
+    assert "### 오전 — 안목해변 (관광지)" in md and "- 고른 이유: 바다 산책" in md and "직전 장소에서 직선 약 4.1km" in md
+    assert "- 소개(관광공사 원문 발췌): 소개 소개" in md and "정보 기준일 2026-10-01" in md and "  - 무장애 — 이동 · 시설: 접근로: 경사로" in md
+    assert "- 오죽헌 (문화시설) — 실내 전시" in md and "- 이 기간에 등록된 축제가 없습니다." in md
+    assert md.rstrip().endswith(f"{CREDIT} · [저작권 정책 안내]({POLICY_URL}) · 날씨: 기상청 중기예보 · 데이터 기준일 2026-11-13")
+
+
+def test_부가_코스가_없으면_없다고_적는다():
+    s = {**STATE, "answer": {**STATE["answer"], "backup": []}}
+    assert "- 이 조건에서 실내 후보를 찾지 못했습니다." in export_markdown(s, PLACES, "2026-11-13")
