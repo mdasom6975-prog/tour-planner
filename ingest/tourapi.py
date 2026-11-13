@@ -33,7 +33,7 @@ def _save_usage(usage: dict) -> None:
     USAGE_PATH.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def call(operation: str, params: dict | None = None, today: str | None = None, service: str | None = None) -> dict:
+def call(operation: str, params: dict | None = None, today: str | None = None, service: str | None = None, margin: int | None = None) -> dict:
     """TourAPI 오퍼레이션을 한 번 호출한다.
 
     성공: {"ok": True, "items": [...], "total": 전체 건수}
@@ -59,6 +59,8 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 교안: 3일차 Part4 "안전장치는 프롬프트가 아니라 코드에" / day3_tools.run_agent 의 max_rounds.
     # 한도는 오퍼레이션마다 따로 1,000건이다. 서버가 응답 머리말(X-RateLimit-Remaining)로 남은 수를 알려 준다
     # (2026-11-11 세 오퍼레이션에서 서버 값과 우리 기록이 일치하는 것을 확인).
+    # margin: 한도 직전에 남겨 둘 수. 수집은 기본값(50)을 남기고, 실시간 재확인(get_place_detail)은 그 여유분 안에서 더 작은 값으로 부른다.
+    margin = config.TOURAPI_SAFETY_MARGIN if margin is None else margin
     usage = _load_usage(today)
     used = usage["counts"].get(usage_key, 0)
     server_remaining = usage.get("server_remaining", {}).get(usage_key)
@@ -66,11 +68,11 @@ def call(operation: str, params: dict | None = None, today: str | None = None, s
     # 왜: 우리 기록은 이 함수를 거친 호출만 센다. 서버가 알려 준 값이 있으면 그것이 정답이다. 어디: 멈출지 판단.
     # 교안: 1일차 03 "환각" 과 같은 교훈 — 기억(우리 기록)보다 근거(서버 값)를 우선한다.
     if server_remaining is not None:
-        blocked = server_remaining <= config.TOURAPI_SAFETY_MARGIN
-        detail = f"서버가 알려 준 남은 수 {server_remaining}, 여유분 {config.TOURAPI_SAFETY_MARGIN}"
+        blocked = server_remaining <= margin
+        detail = f"서버가 알려 준 남은 수 {server_remaining}, 여유분 {margin}"
     else:
         # 그날 첫 호출 전이라 서버 값이 아직 없을 때만 우리 기록으로 판단한다.
-        budget = config.TOURAPI_DAILY_LIMIT - config.TOURAPI_SAFETY_MARGIN
+        budget = config.TOURAPI_DAILY_LIMIT - margin
         blocked = used >= budget
         detail = f"우리 기록 {used}/{budget}"
     if blocked:
