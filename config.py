@@ -147,6 +147,16 @@ BACKUP_RELEASE_TAG = "data-backup"
 # 교안: RAG 실습1 Q2 — 정답 목록(qrels)과 문서 묶음(corpus)을 고정해야 점수를 비교할 수 있다.
 EVAL_PLACES = "data/eval/places_2026-11-12.jsonl"
 EVAL_INDEX_DIR = "data/eval/index"
+# 왜: 코스 평가(8단계)는 카페 · 분류 칸이 있는 새 사본을 쓴다. dev 로 고치는 동안은 11/16 사본, 수집이 끝나면 최종 사본으로 바꿔 비교표와 holdout 을 돌린다(2026-11-16 결정). 어디: eval/run.py.
+# 교안: RAG 실습1 Q2 — 문서 묶음을 고정. 검색 평가(EVAL_PLACES)와는 사본이 다르다.
+EVAL_COURSE_PLACES = "data/eval/places_2026-11-16.jsonl"
+EVAL_COURSE_INDEX_DIR = "data/eval/index_2026-11-16"
+EVAL_COURSE_SET = "eval/course_set.jsonl"
+EVAL_RUNS_DIR = "runs/eval"       # 문항별 실행 기록(관광공사 문장이 섞여 git 에 올리지 않는다). 비교표는 eval/results/
+# 고정 날씨표: 적지 않은 날은 맑음. 비 · 눈 분기를 타 보도록 이틀만 다르게 둔다(값은 임의).
+EVAL_WEATHER_DEFAULT = {"temp_max": 12.0, "temp_min": 4.0, "rain_prob": 10, "snow_cm": 0.0}
+EVAL_WEATHER = {"2026-11-22": {"temp_max": 9.0, "temp_min": 5.0, "rain_prob": 80, "snow_cm": 0.0},
+                "2026-11-29": {"temp_max": 1.0, "temp_min": -4.0, "rain_prob": 70, "snow_cm": 2.0}}
 EVAL_POOL_DEPTH = 20     # 정답 후보를 모을 때 검색기마다 가져오는 수
 EVAL_SEED = 12           # 후보를 섞는 난수 씨앗 (재현용)
 EVAL_K = 10              # Recall@k · nDCG@k 의 k (화면에 보이는 결과 수와 같게)

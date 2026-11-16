@@ -18,7 +18,8 @@ from tools.weather import get_weather
 
 
 
-def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = None, llm=None, checkpointer=None, today: str | None = None):
+def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = None, llm=None, checkpointer=None, today: str | None = None,
+               weather_fetch=None, detail_fetch=None):
     """질문 한 건을 처리할 그래프. retriever 는 비싸서(준비 14초) 바깥에서 한 번 만들어 넘긴다."""
     # 왜: 날짜는 질문마다 새로 읽어야 앱을 며칠 켜 둬도 어제 날짜로 날씨를 묻지 않는다. 어디: 그래프를 만드는 시점.
     # 교안: 4일차 PRD "외부 의존 주입" — 오늘 날짜 · LLM · 검색 · 날씨를 인자로 받아 평가에서 가짜로 바꾼다.
@@ -33,10 +34,12 @@ def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = 
             q, region=region, types=types, area=area, k=config.SEARCH_K * (config.OVERFETCH if types in (config.FOOD_TYPES, config.INDOOR_TYPES) else 1),
             retriever=retriever, today=today),
         areas=areas,
-        weather=lambda lat, lon, dates: get_weather(lat, lon, dates, today=today),
+        # 왜: 평가는 고정 날씨표와 저장분만 쓴다(2026-11-16 결정). 조회 함수를 넘기면 그것만 쓰고, 안 넘기면 화면처럼 실제 호출이다. 어디: 날씨 · 실시간 재확인.
+        # 교안: 4일차 PRD "가짜 날씨 데이터를 주입".
+        weather=lambda lat, lon, dates: get_weather(lat, lon, dates, today=today, **({"fetch": weather_fetch} if weather_fetch else {})),
         festivals=lambda region, start, end: search_festivals(region, start, end, places=retriever.places),
         stored=places,
-        detail=lambda cid: get_place_detail(cid, places=places, today=today),
+        detail=lambda cid: get_place_detail(cid, places=places, today=today, **({"fetch": detail_fetch} if detail_fetch else {})),
     )
 
 

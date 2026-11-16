@@ -13,13 +13,15 @@ from rag.rerank import Reranker
 
 
 class Retriever:
-    def __init__(self, places: list, encoder=None, scorer=None):
+    def __init__(self, places: list, encoder=None, scorer=None, index_dir: Path | None = None):
         # 왜: 화면 · 도구 · 평가가 검색기 네 개를 각자 조립하면 설정이 어긋난다. 조립을 한 곳에 두고 장소 목록도 한 번만 읽어 나눠 쓴다. 어디: 생성자.
         # 교안: RAG 실습1 Q7 — BM25 · 임베딩 · RRF · 재정렬을 겹쳐 하나의 retriever 로 쓰던 구조.
         started = time.perf_counter()
         self.places = places
         self.bm25 = Bm25Index(places)
-        self.dense = DenseIndex(places, encoder=encoder)
+        # 왜: 평가는 날짜로 고정한 사본을 쓴다. 벡터 파일도 따로 두어야 사본에 없는 장소의 벡터가 실제 색인(data/index)에서 지워지지 않는다. 어디: 평가 실행기(8-2).
+        # 교안: RAG 실습1 Q2 — 문서 묶음(corpus)을 고정해야 점수를 비교할 수 있다.
+        self.dense = DenseIndex(places, encoder=encoder, **({"index_dir": index_dir} if index_dir else {}))
         self.hybrid = HybridIndex(self.bm25, self.dense)
         self.reranker = Reranker(self.hybrid, places, scorer=scorer)
         # 준비에 걸린 시간과 새로 계산한 벡터 수. 화면과 평가가 "왜 느렸는지" 를 볼 때 쓴다.
