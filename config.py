@@ -153,6 +153,8 @@ EVAL_COURSE_PLACES = "data/eval/places_2026-11-16.jsonl"
 EVAL_COURSE_INDEX_DIR = "data/eval/index_2026-11-16"
 EVAL_COURSE_SET = "eval/course_set.jsonl"
 EVAL_RUNS_DIR = "runs/eval"       # 문항별 실행 기록(관광공사 문장이 섞여 git 에 올리지 않는다). 비교표는 eval/results/
+EVAL_RESULTS_DIR = "eval/results"   # 채점 결과표(장소 이름과 숫자만). git 에 올린다
+EVAL_MAX_SEC = 30                   # 요청 1건 소요 합격선 (PRD 12-2)
 # 고정 날씨표: 적지 않은 날은 맑음. 비 · 눈 분기를 타 보도록 이틀만 다르게 둔다(값은 임의).
 EVAL_WEATHER_DEFAULT = {"temp_max": 12.0, "temp_min": 4.0, "rain_prob": 10, "snow_cm": 0.0}
 EVAL_WEATHER = {"2026-11-22": {"temp_max": 9.0, "temp_min": 5.0, "rain_prob": 80, "snow_cm": 0.0},

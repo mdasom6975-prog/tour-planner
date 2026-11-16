@@ -52,7 +52,7 @@
 | `expect.kind` | 마지막 답의 종류: `course` · `ask_back` · `abstain` |
 | `expect.region` · `place` · `days` · `start_date` | 조건 이해가 맞았는지 코드로 비교한다 |
 | `expect.missing` | 되묻기 사유 코드. 적힌 것이 모두 들어 있으면 통과 |
-| `expect.museum_max` · `notice_has` · `text_has` · `text_not` · `title_has` · `title_not` | 답 안에 있어야 · 없어야 하는 것 |
+| `expect.museum_max` · `notice_has` · `text_has` · `text_not` · `title_has` · `title_not` | 답 안에 있어야 · 없어야 하는 것. `title_*` 은 코스의 장소 이름만, `text_*` 은 답 문장과 안내를 본다 |
 | `expect.mode` · `changed` | 후속 수정 문항: 수정 경로를 탔는지, 지정한 칸이 바뀌었는지 |
 | `expect.exclusions` | 제외 조건. 식당 소개글과 맞는지는 근거성 채점(8-4)에서 본다 |
 
