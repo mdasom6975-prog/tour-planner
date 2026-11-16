@@ -45,7 +45,10 @@ def route_update(llm, trace):
     def update(state) -> dict:
         has_course = (state.get("answer") or {}).get("kind") == "course"
         if not has_course:   # 코스가 없으면 고칠 것이 없다. LLM 을 부르지 않고 새 요청이다
-            return {**RESET_NEW, "mode": "new"}
+            # 왜: 직전 답이 되묻기였으면 이번 문장은 그 답("다음 주 토요일")일 수 있다. 앞서 파악한 조건을 parse_request 가 합치도록 넘긴다. 어디: route.
+            # 교안: PRD F1 "한 번 되묻는다" — 되물은 뒤 답을 이어 받는다(3일차 05 checkpointer 의 State 이어 쓰기).
+            asked = (state.get("answer") or {}).get("kind") == "ask_back"
+            return {**RESET_NEW, "mode": "new", "pending_request": state.get("request") or {} if asked else {}}
         text = TAG.sub("", state.get("message", "")).strip()
         t0 = time.perf_counter()
         try:
@@ -61,8 +64,8 @@ def route_update(llm, trace):
         trace.record("route.llm", "llm", input={"chars": len(text)}, output={"mode": mode, "add_terms": len(terms), "add_places": len(names)} if ok else {"error": err}, ok=ok,
                      took_ms=round((time.perf_counter() - t0) * 1000, 2))
         if mode == "edit":
-            return {**RESET_EDIT, "mode": mode, "add_terms": terms, "add_places": names}
-        return {**RESET_NEW, "mode": mode}
+            return {**RESET_EDIT, "mode": mode, "add_terms": terms, "add_places": names, "pending_request": {}}
+        return {**RESET_NEW, "mode": mode, "pending_request": {}}
     return update
 
 

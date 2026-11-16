@@ -283,6 +283,10 @@ def respond_update(state) -> dict:
         notices.append(f"상설 · 장기 행사 {len(fest['long_running'])}건은 코스에 넣지 않았습니다.")
     if "place_unmatched" in req.get("notes", []):
         notices.append(f"'{req.get('place')}'은(는) 시·군 단위로 찾지 못해 {req.get('region')} 전체에서 찾았습니다.")
+    # 왜: 박물관 · 미술관을 직접 요청해도 1곳 제한은 유지한다. 왜 1곳뿐인지 알린다(2026-11-13 결정). 어디: 안내 문구.
+    # 교안: 직접 대응 없음.
+    if any(w in p for p in req.get("preferences", []) for w in config.MUSEUM_WORDS):
+        notices.append(f"박물관 · 미술관 · 전시관은 코스에 {config.MUSEUM_MAX}곳만 넣고, 나머지는 다른 볼거리로 채웠습니다.")
     if state.get("edit_note"):
         notices.append(f"수정 요청 중 반영하지 못한 부분: {state['edit_note']}")
     if state.get("edit_error"):

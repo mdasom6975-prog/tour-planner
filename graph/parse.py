@@ -25,6 +25,20 @@ def _clean_list(items) -> list:
     return [str(x).strip()[:MAX_ITEM_CHARS] for x in (items or []) if str(x).strip()][:MAX_ITEMS]
 
 
+def _merge(raw: dict, prev: dict) -> dict:
+    """되물은 뒤의 답이면 앞서 파악한 조건에 이번 값을 덮어 합친다. 지역 · 일수 · 날짜를 모두 새로 말했으면 새 요청으로 본다."""
+    # 왜: "제주 2박 3일" → (날짜 되묻기) → "다음 주 토요일" 에서 지역 · 일수가 사라지면 다시 되묻게 된다. 어디: parse_request.
+    # 교안: 직접 대응 없음(2026-11-13 결정: 날짜도 되묻는다).
+    if not prev or all(raw.get(k) for k in ("region", "days", "start_date")):
+        return raw
+    out = {**raw}
+    for k in ("region", "place", "start_date", "days", "companions"):
+        out[k] = raw.get(k) or prev.get(k)
+    for k in ("preferences", "exclusions"):
+        out[k] = list(dict.fromkeys([*(prev.get(k) or []), *(raw.get(k) or [])]))
+    return out
+
+
 def parse_update(llm, today: str, trace: Trace):
     """parse_request 노드의 변경값을 만드는 함수를 돌려준다. llm · today 는 바깥에서 받는다."""
     def update(state) -> dict:
@@ -44,7 +58,7 @@ def parse_update(llm, today: str, trace: Trace):
         trace.record("parse_request.llm", "llm", input={"chars": len(text)},
                      output=raw if ok else {"error": err}, ok=ok,
                      took_ms=round((time.perf_counter() - t0) * 1000, 2))
-        return {"request": _check(raw, today, failed=not ok)}
+        return {"request": _check(_merge(raw, state.get("pending_request") or {}) if ok else raw, today, failed=not ok)}
     return update
 
 
@@ -75,7 +89,8 @@ def _check(raw: dict, today: str, failed: bool = False) -> dict:
         req["days"] = days
     req["place"] = (raw.get("place") or "").strip()[:MAX_ITEM_CHARS] or None
     req["companions"] = (raw.get("companions") or "").strip()[:MAX_ITEM_CHARS] or None
-    # 날짜는 없어도 진행한다(PRD F1: 지역 · 일수만 되묻는다). 대신 왜 비었는지 notes 에 남긴다.
+    # 왜: 날씨 · 휴무 · 축제 판정이 모두 날짜에 달려 있어 날짜가 없으면 코스를 쓸 수 없다. 추측하지 않고 되묻는다(2026-11-13 결정, 시나리오 3 · 5 가 오류로 끝남). 어디: 날짜 검사.
+    # 교안: PRD F1 "추측하지 않고 한 번 되묻는다". 지난 날짜 · 읽지 못한 날짜도 같이 되묻고 이유는 notes 에 남긴다.
     start = raw.get("start_date")
     if start:
         try:
@@ -86,6 +101,8 @@ def _check(raw: dict, today: str, failed: bool = False) -> dict:
                 req["start_date"] = d.isoformat()
         except ValueError:
             req["notes"].append("start_date_invalid")
+    if not req["start_date"]:
+        req["missing"].append("start_date")
     return req
 
 
@@ -103,6 +120,9 @@ def ask_back_update(state) -> dict:
         lines.append(f"어느 지역으로 가시나요? 가능한 지역: {', '.join(config.REGIONS)}.")
     if "days" in codes:
         lines.append("며칠 일정인가요? (예: 1박 2일)")
+    if "start_date" in codes:
+        past = "지난 날짜로는 코스를 짤 수 없습니다. " if "start_date_past" in req.get("notes", []) else ""
+        lines.append(f"{past}언제 출발하시나요? (예: 다음 주 토요일, 11월 21일)")
     if "days_too_long" in codes:
         lines.append(f"일정은 최대 {config.MAX_TRIP_DAYS}일까지 짤 수 있습니다. 일수를 줄여 주세요.")
     return {"answer": {"kind": "ask_back", "missing": codes, "text": " ".join(lines)}}

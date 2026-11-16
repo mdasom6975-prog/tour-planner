@@ -160,3 +160,9 @@ def test_긴_문장은_자르고_응답에_분류별_줄이_붙는다():
     ans = respond_update(state(candidates=cands, course=course(days=[{"date": D1, "slots": [{"slot": "점심", "content_id": "f0", "reason": "r"}]}], backup=("m0",))))["answer"]
     assert "  · 무장애 — 이동 · 시설: 접근로: 출입구까지 경사로 설치 / 출입통로" in ans["text"] and ans["text"].count("무장애 — 영유아: 수유실: 수유실 있음") == 2
     assert ans["days"][0]["slots"][0]["access"] and ans["backup"][0]["access"]
+
+
+def test_박물관을_요청하면_한_곳만_넣었다고_알린다():
+    asked = respond_update(state(course=course(), request={**state()["request"], "preferences": ["미술관 위주"]}))["answer"]
+    plain = respond_update(state(course=course()))["answer"]
+    assert any("1곳만 넣고" in n for n in asked["notices"]) and not any("1곳만 넣고" in n for n in plain["notices"])

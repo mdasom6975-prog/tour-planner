@@ -191,6 +191,7 @@ OVERFETCH = 3   # 카페 · 박물관을 걸러 내고도 후보가 SEARCH_K 곳
 MUSEUM_CLASS = "VE07"
 MUSEUM_MAX = 1
 MUSEUM_CANDIDATES = 3
+MUSEUM_WORDS = ("박물관", "미술관", "전시")   # 취향에 이 낱말이 있으면 "1곳만 넣었다"는 안내를 붙인다
 
 # 왜: 축제 갤러리에 카드가 너무 많으면 가로로 끝없이 넘겨야 한다. 어디: graph/present.py 의 festival_cards.
 # 교안: 직접 대응 없음(2026-11-13 요청). 기간 안 축제를 먼저, 상설 · 장기 행사를 뒤에 둔다.

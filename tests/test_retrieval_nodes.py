@@ -41,7 +41,7 @@ class Harness:
         ids = [line.split("|")[0].replace("id=", "").strip() for line in user.splitlines() if line.startswith("id=")]
         return {"relevant_ids": ids if rule is None else [i for i in ids if rule(i)], "reason": "조건에 맞는 곳이 적음"}
 
-    parsed = {"region": "강릉", "days": 1}
+    parsed = {"region": "강릉", "days": 1, "start_date": "2026-11-21"}
 
 
 def run(h, areas=None, **parsed):
@@ -196,3 +196,16 @@ def test_실내_후보는_충분한가_판정에_세지_않는다():
     h = Harness(search=lambda types: {"ok": True, "results": good_results(types) if types == config.INDOOR_TYPES else []})
     path, out, _ = run(h)
     assert path[-1] == "abstain" and out["grade"]["have"] == {"sight": 0, "food": 0}
+
+
+def test_박물관류는_한_곳만_가볼_곳_수에_센다():
+    # 왜: 박물관류는 코스에 1곳만 들어가 그 이상은 칸을 채우지 못한다. 미술관 위주 요청에서 칸이 비던 문제의 회귀 방지.
+    h = Harness(search=lambda types: {"ok": True, "results": [
+        item(f"{types[0]}{n}", types[0], category="VE07" if types[0] == "관광지" else "FD01") for n in range(2)]})
+    path, out, _ = run(h)   # 1일: 가볼 곳 2곳이 필요한데 둘 다 박물관류라 1곳으로 센다
+    assert path[-1] == "abstain" and out["answer"]["grade"]["have"]["sight"] == 1
+
+
+def test_판정_지시문은_음식점을_관광_취향으로_거르지_않게_한다():
+    from graph.retrieval import GRADE_SYSTEM
+    assert "food 인 후보(음식점)는 관광 취향" in GRADE_SYSTEM
