@@ -126,3 +126,9 @@ def test_지역을_이미_알면_지역_칩을_다시_그리지_않는다():
     assert known_region({"answer": {"kind": "ask_back"}, "request": {"region": "제주"}}) == "제주"   # 날짜만 되묻는 중
     assert known_region({"answer": {"kind": "ask_back"}, "request": {"region": None}}) is None   # 지역을 되묻는 중이면 칩을 그린다
     assert known_region({"answer": {"kind": "abstain"}, "request": {"region": "강릉"}}) is None and known_region({}) is None
+
+
+def test_비_오는_날에만_실내_위주_이유를_보인다():
+    from graph.present import rain_note
+    assert rain_note({"indoor": True}, "실내 테마파크 위주로 골랐습니다.") == "비·눈 예보로 실내 위주로 짰습니다. 실내 테마파크 위주로 골랐습니다."
+    assert rain_note({"indoor": False}, "이유") == "" and rain_note({"indoor": True}, "") == "" and rain_note(None, "이유") == ""

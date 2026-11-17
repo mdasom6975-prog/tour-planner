@@ -337,4 +337,5 @@ def respond_update(state) -> dict:
         notices.append(f"확인 필요: {_label(v['date'])} {v['slot']} {name} — 규칙에 맞지 않아 뺐습니다({v['rule']}).")
     if notices:
         lines += ["", *[f"- {n}" for n in notices]]
-    return {"answer": {"kind": "course", "text": "\n".join(lines), "days": days_out, "backup": backup_out, "cafes": cafes_out, "notices": notices}}
+    return {"answer": {"kind": "course", "text": "\n".join(lines), "days": days_out, "backup": backup_out, "cafes": cafes_out, "notices": notices,
+                       "rain_reason": course.get("rain_reason") or ""}}   # 비 · 눈 오는 날을 실내 위주로 짠 이유(화면이 그 날의 날씨 줄 아래에 보인다)

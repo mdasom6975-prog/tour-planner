@@ -69,6 +69,13 @@ def weather_line(w: dict | None) -> str:
     return f"최저 {w['temp_min']:g}~최고 {w['temp_max']:g}℃ · 강수확률 {w['rain_prob']:g}% · {kind}"
 
 
+def rain_note(w: dict | None, rain_reason: str) -> str:
+    """비 · 눈 오는 날이고 모델이 이유를 적었으면 그 날 아래에 보일 문장을 돌려준다. 아니면 빈 문자열."""
+    # 왜: "비 오는 날은 실내 위주"라는 분기가 화면에서는 날씨 줄의 '비 예보' 한 단어로만 보여, 왜 이 장소들인지 알기 어려웠다(2026-11-17 화면 확인). 어디: 날짜별 날씨 줄 아래.
+    # 교안: PRD F3 날씨 분기. 문장은 모델이 쓰고(rain_reason), 비 · 눈 판정은 코드가 한다.
+    return f"비·눈 예보로 실내 위주로 짰습니다. {rain_reason}" if w and w.get("indoor") and rain_reason else ""
+
+
 def weather_by_date(state: dict) -> dict:
     return {d["date"]: d for d in (state.get("weather") or {}).get("days", [])}
 

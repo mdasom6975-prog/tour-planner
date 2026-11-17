@@ -15,7 +15,7 @@ from streamlit_folium import st_folium
 
 import config
 from graph.present import (CREDIT, compose_question, known_region, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day,
-                           summary_line, weather_by_date, weather_line)
+                           rain_note, summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
 from harness.trace import Trace
@@ -219,6 +219,9 @@ def draw_course(final: dict, index: Retriever) -> None:
     for tab, day in zip(tabs, ans["days"]):
         with tab:
             st.markdown(f"**{day['date']}** · {weather_line(weather.get(day['date']))}")
+            note = rain_note(weather.get(day["date"]), ans.get("rain_reason", ""))
+            if note:
+                st.info(plain(note))
             for slot in day["slots"]:
                 draw_slot(slot, by_id.get(slot["id"], {}))
     if ans.get("cafes"):
