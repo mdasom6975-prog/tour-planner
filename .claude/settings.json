@@ -1,7 +1,46 @@
 {
   "permissions": {
     "deny": [
-      "Read(./.env)"
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)"
+    ],
+    "allow": [
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(.venv/bin/python -m eval.score *)",
+      "Bash(.venv/bin/python -m eval.compare *)",
+      "Bash(.venv/bin/python scripts/check_keys.py)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.venv/bin/python\" \"${CLAUDE_PROJECT_DIR:-.}/scripts/hooks/after_edit.py\"",
+            "timeout": 120,
+            "statusMessage": "pytest 실행 중"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.venv/bin/python\" \"${CLAUDE_PROJECT_DIR:-.}/scripts/hooks/on_stop.py\"",
+            "timeout": 60,
+            "statusMessage": "최근 평가 기록 다시 채점 중"
+          }
+        ]
+      }
     ]
   }
 }
