@@ -103,6 +103,10 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                     out.append(_v("withdrawn", f"{c.get('title')} 은(는) 관광공사 목록에서 내려간 장소입니다.", cid, d["date"], s["slot"]))
                 elif rest_on(r["place"], date.fromisoformat(d["date"])) == "closed":
                     out.append(_v("closed", f"{c.get('title')} 은(는) {_label(d['date'])} 휴무입니다. 다른 장소로 바꾸세요.", cid, d["date"], s["slot"]))
+        # 하루 직선거리 합 상한(config.MAX_DAY_KM_BY_REGION). 칸이 아니라 하루 전체의 문제라 slot 은 비워 둔다(칸을 빼거나 바꾸지 않고 다시 쓰게만 한다)
+        day_limit, legs = config.MAX_DAY_KM_BY_REGION.get(region), _legs(d["slots"], cands)
+        if day_limit and legs and legs[0] > day_limit:
+            out.append(_v("day_distance", f"{_label(d['date'])}의 이동 거리가 직선 합 {legs[0]:.0f}km 로 하루 상한 {day_limit}km 를 넘습니다. 가까운 장소끼리 묶어 다시 고르세요.", date=d["date"]))
     return out
 
 
@@ -140,7 +144,7 @@ def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, reg
                     continue
                 trial_day = {**day, "slots": [{**s, "content_id": cid, "reason": config.REPLACED_REASON} if i == n else s for i, s in enumerate(day["slots"])]}
                 trial = {**course, "days": [trial_day if d["date"] == day["date"] else d for d in course["days"]]}
-                if any(v["date"] == day["date"] or v["rule"] in ("museum_limit", "duplicate") for v in check(trial)):
+                if any((v["date"] == day["date"] and v["rule"] != "day_distance") or v["rule"] in ("museum_limit", "duplicate") for v in check(trial)):   # 하루 합 초과는 구간 바꿔 치기를 막지 않는다
                     continue
                 legs = _legs(trial_day["slots"], cands)
                 if legs and (best is None or legs[0] < best[0]):
