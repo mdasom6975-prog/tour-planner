@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 
 import config
-from graph.present import (CREDIT, compose_question, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day,
+from graph.present import (CREDIT, compose_question, known_region, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day,
                            summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
@@ -302,14 +302,14 @@ def main() -> None:
     region_key, theme_key = f"chip_region_{round_}", f"chip_themes_{round_}"
     asked = question
     if question and not from_pending:   # 입력창으로 보낸 문장에만 칩 선택을 덧붙인다(시나리오 · 추가 버튼은 이미 완성된 문장)
-        question = compose_question(question, None if has_course else st.session_state.get(region_key), st.session_state.get(theme_key) or [], has_course)
+        question = compose_question(question, None if known_region(st.session_state.final) else st.session_state.get(region_key), st.session_state.get(theme_key) or [], has_course)
 
     def draw_chips() -> None:
         # 왜: "바다를 말하지 않으면 바다가 0곳"이라 지역마다 대표 취향을 눌러 고르게 한다. 코스가 나온 뒤에는 같은 칩이 "취향 추가"가 된다. 어디: 대화 아래.
         # 교안: 직접 대응 없음(2026-11-13 요청). 칩 키에 번호를 붙여, 질문을 보내면 번호가 바뀌어 선택이 지워진다.
         course_now = (st.session_state.final.get("answer") or {}).get("kind") == "course"   # 질문 처리 뒤의 최신 상태
         rk, tk = f"chip_region_{st.session_state.chip_round}", f"chip_themes_{st.session_state.chip_round}"
-        region = (st.session_state.final.get("request") or {}).get("region") if course_now else st.pills("지역", list(config.REGIONS), key=rk)
+        region = known_region(st.session_state.final) or st.pills("지역", list(config.REGIONS), key=rk)   # 지역을 이미 알면 지역 칩은 그리지 않는다
         if region in config.REGION_THEMES:
             themes = st.pills("취향 추가하기" if course_now else "취향 고르기", config.REGION_THEMES[region], selection_mode="multi", key=tk)
             if course_now and themes and st.button("선택한 취향 넣어서 다시 고치기"):

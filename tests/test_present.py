@@ -118,3 +118,11 @@ def test_칩_선택은_문장으로_덧붙는다():
     assert compose_question("2박 3일 여행", None, [], False) == "2박 3일 여행"
     assert compose_question("", None, ["산"], True) == "취향 추가: 산"
     assert compose_question("점심 빼 줘", None, ["산"], True) == "점심 빼 줘 취향 추가: 산"
+
+
+def test_지역을_이미_알면_지역_칩을_다시_그리지_않는다():
+    from graph.present import known_region
+    assert known_region({"answer": {"kind": "course"}, "request": {"region": "강릉"}}) == "강릉"
+    assert known_region({"answer": {"kind": "ask_back"}, "request": {"region": "제주"}}) == "제주"   # 날짜만 되묻는 중
+    assert known_region({"answer": {"kind": "ask_back"}, "request": {"region": None}}) is None   # 지역을 되묻는 중이면 칩을 그린다
+    assert known_region({"answer": {"kind": "abstain"}, "request": {"region": "강릉"}}) is None and known_region({}) is None

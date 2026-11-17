@@ -230,6 +230,14 @@ def gallery_html(cards: list) -> str:
             f"<div class='row'>{''.join(row)}</div><div id='panel'></div>{''.join(details)}<script>{GALLERY_JS}</script>")
 
 
+def known_region(final: dict) -> str | None:
+    """코스가 나왔거나, 지역은 이미 알고 다른 것(날짜 · 일수)만 되묻는 중이면 그 지역을 돌려준다. 아니면 None."""
+    # 왜: "언제 출발하시나요?"라고 날짜만 되묻는데 지역 칩이 다시 떠서, 눌린 지역이 답에 덧붙어 지역이 바뀔 수 있었다(7-5 화면 확인에서 발견). 어디: 지역 칩을 그릴지 정할 때.
+    # 교안: 직접 대응 없음. 화면 판단을 순수 함수로 빼 테스트한다.
+    answer, region = (final or {}).get("answer") or {}, ((final or {}).get("request") or {}).get("region")
+    return region if region and answer.get("kind") in ("course", "ask_back") else None
+
+
 def compose_question(question: str, region: str | None, themes: list, has_course: bool) -> str:
     """입력창 문장 + 칩 선택 → 그래프에 넣을 문장. 칩은 조건 이해(parse_request)와 route 가 읽는 문장으로만 덧붙인다."""
     # 왜: 칩 선택값을 State 에 몰래 넣지 않고 문장으로 덧붙이면 같은 경로(조건 이해 · route)를 타서 규칙 · 기록이 하나로 남는다. 어디: 질문 보내기 직전.
