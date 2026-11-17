@@ -12,6 +12,7 @@ class TripRequest(BaseModel):
     companions: str | None = Field(None, description="동행(예: 부모님, 아이). 없으면 null")
     preferences: list[str] = Field(default_factory=list, description="취향·바라는 것")
     exclusions: list[str] = Field(default_factory=list, description="빼 달라고 한 것")
+    cannot_do: list[str] = Field(default_factory=list, description="이 서비스가 대신 해 줄 수 없는 요청(예약 · 예매 · 결제 등). 없으면 빈 목록")
 
 
 class Grade(BaseModel):

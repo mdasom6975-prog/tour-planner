@@ -15,6 +15,7 @@ SYSTEM = """당신은 국내 여행 요청에서 조건을 뽑는 도구입니�
 - 지원 지역이 아닌 곳을 말하면 region 에 말한 이름 그대로 적습니다. 가까운 지역으로 바꾸지 않습니다.
 - 오늘은 {today}({weekday}요일)입니다. 시작일은 이 날짜를 기준으로 YYYY-MM-DD 로 적습니다. 알 수 없으면 null.
 - 말하지 않은 값은 추측하지 않고 null 또는 빈 목록으로 둡니다.
+- 이 서비스는 코스만 짭니다. 숙소 · 교통편 · 식당의 예약 · 예매 · 결제처럼 대신 해 줄 수 없는 요청은 preferences 가 아니라 cannot_do 에 적습니다.
 - 지정한 JSON 형식으로만 답합니다."""
 WEEKDAYS = "월화수목금토일"
 TAG = re.compile(r"</?\s*사용자\s*입력\s*>")
@@ -34,7 +35,7 @@ def _merge(raw: dict, prev: dict) -> dict:
     out = {**raw}
     for k in ("region", "place", "start_date", "days", "companions"):
         out[k] = raw.get(k) or prev.get(k)
-    for k in ("preferences", "exclusions"):
+    for k in ("preferences", "exclusions", "cannot_do"):
         out[k] = list(dict.fromkeys([*(prev.get(k) or []), *(raw.get(k) or [])]))
     return out
 
@@ -69,6 +70,11 @@ def _check(raw: dict, today: str, failed: bool = False) -> dict:
     req = {"region": None, "place": None, "start_date": None, "days": None, "companions": None,
            "preferences": _clean_list(raw.get("preferences")), "exclusions": _clean_list(raw.get("exclusions")),
            "missing": [], "notes": []}
+    # 왜: "숙소랑 KTX 표도 예매해 줘"의 예약 · 예매가 취향에 들어가면 판정이 그 취향에 맞는 가볼 곳이 없다며 전부 걸러 포기로 끝났다(dev e03 10회 중 9회). 취향에서 빼 따로 두고 안내한다. 어디: 조건 검사.
+    # 교안: PRD 4번 "하지 않을 것"(예약 · 결제). LLM 이 취향에 넣어도 낱말표(config.CANNOT_DO_WORDS)로 코드가 다시 옮긴다(2026-11-17 결정).
+    moved = [p for p in req["preferences"] if any(w in p for w in config.CANNOT_DO_WORDS)]
+    req["preferences"] = [p for p in req["preferences"] if p not in moved]
+    req["cannot_do"] = list(dict.fromkeys([*_clean_list(raw.get("cannot_do")), *moved]))
     if failed:
         req["missing"].append("parse_failed")
         return req

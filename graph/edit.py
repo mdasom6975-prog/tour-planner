@@ -6,7 +6,7 @@ import time
 
 import config
 from graph.context import rest_table, trip_dates
-from graph.course import _day_lines, _rest_lines, _view, pack_course
+from graph.course import REASON_RULE, _day_lines, _rest_lines, _view, pack_course
 from graph.parse import TAG
 from graph.retrieval import _clean
 from graph.schemas import EditedCourse, Route
@@ -29,6 +29,7 @@ EDIT_SYSTEM = """당신은 이미 짠 국내 여행 코스를 사용자의 수�
 - 점심 · 저녁 칸에는 식당만 씁니다. "하루 칸"에 카페가 없으면 카페는 칸에 넣지 않고 cafes(근처 카페 2곳, <카페 후보> 안에서)에 둡니다. 요청이 카페에 관한 것이면 cafes 를 고칩니다.
 - 사용자가 이름으로 넣어 달라고 한 장소 또는 방금 추가로 찾은 후보(아래 "이번에 추가한 후보")는 요청에 맞게 코스에 반드시 넣고, 그만큼 다른 칸을 바꿉니다. 칸 유형(오전 · 오후 = 가볼 곳, 점심 · 저녁 = 식당)에 맞지 않거나 넣을 수 없으면 note 에 이유를 적습니다.
 - 바꾼 칸의 reason 은 새로 쓰고, 그대로인 칸의 reason 은 현재 코스 것을 그대로 옵니다.
+""" + REASON_RULE + """
 - 후보에 없어서 반영하지 못하는 요청이 있으면 note 에 한 문장으로 적고, 지어내지 않습니다.
 - 지정한 JSON 형식으로만 답합니다."""
 

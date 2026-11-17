@@ -174,3 +174,10 @@ def test_먼_날짜와_카페_칸을_못_넣은_것을_알린다():
     assert any("먼 날짜" in n and "다른 날짜라면" in n for n in ans["notices"])
     assert "카페 후보가 부족해 코스에 카페 칸을 넣지 못했습니다." in ans["notices"]
     assert not any("먼 날짜" in n or "카페 칸" in n for n in respond_update(state(course=course()))["answer"]["notices"])
+
+
+def test_이유_문장_규칙은_작성과_수정_지시문에_모두_있다():
+    # 왜: 이유에 "가깝다 · 이동이 짧다"를 쓰면 근거 없는 문장이 됐다(8-4). 거리는 코드가 계산해 화면에 보여 준다.
+    from graph.course import DRAFT_SYSTEM, REASON_RULE
+    from graph.edit import EDIT_SYSTEM
+    assert "거리나 이동" in REASON_RULE and REASON_RULE in DRAFT_SYSTEM and REASON_RULE in EDIT_SYSTEM

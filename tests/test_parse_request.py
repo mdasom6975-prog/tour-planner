@@ -137,3 +137,11 @@ def test_먼_날짜는_받되_사유를_남긴다():
     _, near, _ = run(fake(region="부산", days=2, start_date="2026-11-21"))
     assert far["request"]["start_date"] == "2027-11-10" and far["request"]["notes"] == ["start_date_far"] and far["request"]["missing"] == []
     assert near["request"]["notes"] == []
+
+
+def test_예약_예매는_취향이_아니라_못_하는_요청으로_옮긴다():
+    # 왜: 예약 · 예매가 취향에 들어가면 판정이 가볼 곳을 모두 걸러 포기로 끝났다(dev e03). LLM 이 취향에 넣어도 코드가 옮긴다.
+    from graph.parse import _check
+    req = _check({"region": "부산", "days": 2, "start_date": "2026-11-21", "preferences": ["바다", "KTX 예매"], "cannot_do": ["숙소 예약"]}, "2026-11-16")
+    assert req["preferences"] == ["바다"] and req["cannot_do"] == ["숙소 예약", "KTX 예매"] and not req["missing"]
+    assert _check({"region": "부산", "days": 2, "start_date": "2026-11-21"}, "2026-11-16")["cannot_do"] == []
