@@ -225,6 +225,23 @@ def test_판정_지시문은_음식점을_관광_취향으로_거르지_않게_�
     assert "음식점 조건에는 취향이 없습니다" in GRADE_SYSTEM
 
 
+def test_박물관류가_아닌_가볼_곳이_모자라면_지역_이름으로_한_번_더_찾는다():
+    # 왜: "미술관" 질의는 가볼 곳 결과가 박물관류뿐이라 후보가 모자랐다(dev c09). 지역 이름 질의로 가볼 곳을 한 번 더 찾아 채운다.
+    h = Harness()
+    def search(types):
+        last = h.searches[-1]
+        if types == config.SIGHT_TYPES and last["query"] != "강릉":
+            return {"ok": True, "results": [item(f"미술관{n}", category="VE07") for n in range(2)]}
+        return {"ok": True, "results": good_results(types)}
+    h.search_fn = search
+    path, out, _ = run(h, preferences=["미술관"])
+    assert [s["query"] for s in h.searches if s["types"] == config.SIGHT_TYPES] == ["강릉 미술관", "강릉"]
+    assert "abstain" not in path and "transform_query" not in path
+    h2 = Harness()   # 가볼 곳이 충분하면 추가 검색을 하지 않는다
+    run(h2, preferences=["바다"])
+    assert len([s for s in h2.searches if s["types"] == config.SIGHT_TYPES]) == 1
+
+
 def test_음식_취향은_가볼_곳_판정_조건에서_빼고_다른_취향은_남긴다():
     # 왜: "빵 맛집" 취향이 가볼 곳을 모두 탈락시켜 0곳 포기가 났다(2026-11-17). 음식 낱말이 든 취향만 뺀다. 어디: grade 입력.
     h = Harness()

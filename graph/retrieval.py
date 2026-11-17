@@ -87,6 +87,15 @@ def retrieve_update(search, areas: dict | None = None):
                     + [r for r in results if r.get("category") == config.MUSEUM_CLASS][:config.MUSEUM_CANDIDATES]
             for item in results:
                 found.setdefault(item["id"], {**item, "kind": kind})
+        # 왜: "미술관" 같은 질의는 가볼 곳 결과가 거의 박물관류라 3곳 제한 뒤 후보가 모자랐다(dev c09 6회 중 1회 포기). 박물관류가 아닌 가볼 곳이 필요한 수보다 적으면 지역 이름으로 한 번 더 찾는다. 어디: 후보 합치기 전.
+        # 교안: 직접 대응 없음(2026-11-17 결정). 추가 후보도 판정(grade_documents)을 그대로 거친다.
+        need = max(req.get("days") or 1, 1) * config.PLACES_PER_DAY
+        plain = sum(1 for c in found.values() if c["kind"] == "sight" and c.get("category") != config.MUSEUM_CLASS)
+        base_query = req.get("place") or req.get("region")
+        if plain < need and base_query and base_query != query:
+            got = search(base_query, region=req.get("region"), types=KINDS["sight"], area=area)
+            for item in got["results"] if got.get("ok") else []:
+                found.setdefault(item["id"], {**item, "kind": "sight"})
         # 왜: 박물관류(VE07)가 후보를 채우면 코스도 박물관만 나온다. 후보 단계에서 MUSEUM_CANDIDATES 곳까지만 남기고 나머지는 다른 종류로 채운다. 어디: 후보 합치기.
         # 교안: 직접 대응 없음(2026-11-13 결정). 코스 안에서 1곳으로 줄이는 것은 validate_course 규칙이다.
         museums = 0

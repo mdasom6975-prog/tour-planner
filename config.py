@@ -8,11 +8,11 @@ load_dotenv()
 # --- LLM -----------------------------------------------------------------
 # init_chat_model("제공자:모델") 형식. 비교표는 이 두 줄을 각각 돌려 만든다.
 MODELS = {
-    "claude": "anthropic:claude-opus-5-5",
+    "claude": "anthropic:claude-sonnet-5-5",   # 2026-11-17 사용자 결정: opus-5-5 에서 바꿈
     "openai": "openai:gpt-5.4-mini",
 }
 LLM_PROVIDER = os.getenv("LLM_PROVIDER") or "claude"
-# 왜: Opus 5.5 는 생각(thinking)을 끌 수 없고 effort 로만 깊이를 조절한다(기본 medium). 2026-11-17 측정: low 로 2일 코스 작성이 약 25초 → 16초. 어디: make_llm 이 모델을 만들 때.
+# 왜: Opus 5.5 · Sonnet 5.5 는 생각(thinking)을 끌 수 없고 effort 로 깊이를 조절한다. 2026-11-17 측정(Sonnet 5.5 코스 작성): low 5 ~ 7초 · medium 6 ~ 13초 · high 17 ~ 27초. 어디: make_llm 이 모델을 만들 때.
 # 교안: 직접 대응 없음. 모델마다 받는 설정 이름이 달라 제공자별로 적는다(지시문 · 검색 결과는 두 모델이 같다).
 MODEL_OPTIONS = {
     "claude": {"output_config": {"effort": "low"}},
@@ -170,6 +170,9 @@ EVAL_COURSE_SET = "eval/course_set.jsonl"
 EVAL_RUNS_DIR = "runs/eval"       # 문항별 실행 기록(관광공사 문장이 섞여 git 에 올리지 않는다). 비교표는 eval/results/
 EVAL_RESULTS_DIR = "eval/results"   # 채점 결과표(장소 이름과 숫자만). git 에 올린다
 EVAL_MAX_SEC = 30                   # 요청 1건 소요 합격선 (PRD 12-2)
+GROUND_PASS_RATE = 0.9        # 근거성 합격선(PRD 12-2): 근거 있는 이유 문장 90% 이상
+GROUND_SOURCE_CHARS = 1500    # 채점자에게 보여 주는 소개글 길이. 코스 작성은 앞부분(SNIPPET_CHARS)만 보지만 채점은 출처 문서를 넉넉히 본다
+GROUND_NEAR_KM = 5.0          # 이유 문장의 "가깝다 · 근처 · 이동이 짧다"를 인정하는 직전 장소와의 직선 거리(2026-11-17 정함: 사람 표본에서 3.6km 는 인정, 8km 대는 불인정)
 # 고정 날씨표: 적지 않은 날은 맑음. 비 · 눈 분기를 타 보도록 이틀만 다르게 둔다(값은 임의).
 EVAL_WEATHER_DEFAULT = {"temp_max": 12.0, "temp_min": 4.0, "rain_prob": 10, "snow_cm": 0.0}
 EVAL_WEATHER = {"2026-11-22": {"temp_max": 9.0, "temp_min": 5.0, "rain_prob": 80, "snow_cm": 0.0},
@@ -218,6 +221,7 @@ OVERFETCH = 3   # 카페 · 박물관을 걸러 내고도 후보가 SEARCH_K 곳
 MUSEUM_CLASS = "VE07"
 MUSEUM_MAX = 1
 MUSEUM_CANDIDATES = 3
+CANNOT_DO_WORDS = ("예약", "예매", "결제", "발권")   # 취향에 이 낱말이 있으면 "해 드리지 못하는 요청"으로 옮기고 안내한다(PRD 4번 하지 않을 것)
 MUSEUM_WORDS = ("박물관", "미술관", "전시")   # 취향에 이 낱말이 있으면 "1곳만 넣었다"는 안내를 붙인다
 # 왜: "빵 맛집" 같은 음식 취향을 가볼 곳 판정에 보내면 해변 · 시장 · 문화시설이 "빵과 무관"하다며 모두 탈락해 0곳 포기가 났다(2026-11-17 강릉 · 부산 재현). 어디: graph/retrieval.py grade_update.
 # 교안: 직접 대응 없음(2026-11-17 결정). 이 낱말이 든 취향은 가볼 곳 판정에서 빼고 식당 칸을 고르는 쪽에서만 쓴다.
