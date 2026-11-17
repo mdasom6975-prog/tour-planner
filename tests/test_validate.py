@@ -283,3 +283,35 @@ def test_제외_조건_낱말이_그대로_있는_장소는_코드가_막는다(
                                                         {"slot": "오후", "content_id": "s1", "reason": ""}, {"slot": "저녁", "content_id": "f1", "reason": ""}]}]}
     rules = lambda ex: [(v["rule"], v["id"]) for v in find_violations(course, cands, ["2026-11-21"], {}, "강릉", None, ex)]
     assert ("excluded", "fish") in rules(["해산물"]) and rules([]) == []
+
+
+# --- 구역 나누기 · 거리 위반 칸 대체 (2026-11-17) ---
+def test_후보가_넓게_퍼져_있으면_가까운_것끼리_구역으로_묶는다():
+    from graph.state import zone_labels
+    west = [place(f"w{n}", "sight", "관광지", lon=126.20 + n * 0.01, lat=33.3) for n in range(3)]
+    east = [place(f"e{n}", "food", "음식점", lon=126.90 + n * 0.01, lat=33.4) for n in range(3)]
+    labels, between = zone_labels([*west, *east], 2, 20)
+    assert {labels[c["id"]] for c in west} == {"A"} and {labels[c["id"]] for c in east} == {"B"}   # 서쪽부터 A
+    assert between[0][:2] == ("A", "B") and 55 < between[0][2] < 75
+    assert zone_labels(west, 2, 20) == ({}, [])   # 상한 안에 모여 있으면 구역을 붙이지 않는다
+    assert zone_labels([*west, *east], 2, 20) == (labels, between)   # 같은 입력이면 같은 결과
+
+
+def test_거리_위반이_남은_칸은_규칙을_지키는_가장_가까운_후보로_바꾼다():
+    from graph.validate import repair_distance
+    cands = {c["id"]: c for c in [place("a", "sight", "관광지", lon=128.90), place("b", "food", "음식점", lon=128.91),
+                                  place("far", "sight", "관광지", lon=129.60), place("d", "food", "음식점", lon=128.92),
+                                  place("near", "sight", "관광지", lon=128.93), place("near2", "sight", "관광지", lon=128.99),
+                                  place("food2", "food", "음식점", lon=128.94)]}
+    course = {"days": [{"date": "2026-11-21", "slots": [{"slot": "오전", "content_id": "a", "reason": "r"}, {"slot": "점심", "content_id": "b", "reason": "r"},
+                                                        {"slot": "오후", "content_id": "far", "reason": "r"}, {"slot": "저녁", "content_id": "d", "reason": "r"}]}]}
+    fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None)
+    slots = fixed["days"][0]["slots"]
+    assert [s["content_id"] for s in slots] == ["a", "b", "near", "d"]   # 가볼 곳 칸에는 가볼 곳만, 가장 가까운 것
+    assert replaced == [{"date": "2026-11-21", "slot": "오후", "old_id": "far", "id": "near"}] and slots[2]["reason"] == config.REPLACED_REASON
+    assert find_violations(fixed, cands, ["2026-11-21"], {}, "강릉") == [] and course["days"][0]["slots"][2]["content_id"] == "far"   # 원본은 그대로
+    # 휴무 표에 그 날 휴무로 적힌 후보는 고르지 않는다. 바꿀 후보가 없으면 그대로 돌려준다
+    fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None, {"near": {"2026-11-21": "closed"}})
+    assert fixed["days"][0]["slots"][2]["content_id"] == "near2"
+    only = {k: v for k, v in cands.items() if k in ("a", "b", "far", "d")}
+    assert repair_distance(course, only, ["2026-11-21"], {}, "강릉", None, None)[1] == []

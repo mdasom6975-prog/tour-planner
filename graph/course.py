@@ -11,7 +11,7 @@ import config
 from graph.context import _label
 from graph.retrieval import _clean
 from graph.schemas import Course
-from graph.state import retries_of, slots_for, wants_cafe
+from graph.state import retries_of, slots_for, wants_cafe, zone_labels
 from tools.geo import distance_km
 
 # 왜: 이유 문장에 8 ~ 13km 떨어진 곳을 "가깝다 · 이동이 짧다"고 쓰거나 후보에 없는 장소 이름을 덧붙였다(8-4 근거성 채점, 근거 없음의 대부분). 거리는 코드가 계산해 화면에 따로 보여 주므로 이유에서는 빼게 한다. 어디: 코스 작성 · 수정 지시문.
@@ -28,6 +28,7 @@ DRAFT_SYSTEM = """당신은 국내 여행 코스 플래너입니다.
 - 취향에 좋아하는 음식이 있으면 그에 맞는 식당 · 카페를 먼저 고릅니다. 맞는 곳이 모자라면 다른 식당으로 채웁니다.
 - 카페(cafes)는 <카페 후보> 에서 코스 장소들과 가까운 2곳을 골라, 들르기 좋은 이유를 적습니다. 본 코스에 쓴 장소는 고르지 않습니다.
 - 같은 장소를 두 번 쓰지 않습니다. 하루 안에서는 가까운 곳끼리 이어 동선이 짧게 합니다.
+- 후보 줄에 [구역 A] 같은 표시가 있으면 하루의 장소(가볼 곳 · 음식점 · 카페)는 한 구역 안에서 고릅니다. 그 구역에 맞는 곳이 모자랄 때만 "구역 사이 거리"에서 가장 가까운 구역의 장소로 채웁니다.
 - 휴무 표에 그 날짜가 휴무로 적힌 장소는 그 날 넣지 않습니다. '확인 필요'로 적힌 장소는 쓸 수 있습니다.
 - 비 · 눈이 오는 날은 실내 위주로 짜고, 그 이유를 rain_reason 에 한 줄로 적습니다. 그런 날이 없으면 빈 문자열입니다.
 - 날씨 숫자는 주어진 값만 옮겨 적고, 새로 계산하지 않습니다.
@@ -37,12 +38,13 @@ DRAFT_SYSTEM = """당신은 국내 여행 코스 플래너입니다.
 - 지정한 JSON 형식으로만 답합니다."""
 
 
-def _view(c: dict) -> str:
+def _view(c: dict, zone: str | None = None) -> str:
     # 왜: 소개글에 닫는 태그가 들어 있으면 지시문 영역으로 빠져나올 수 있어 태그 글자를 지운다. 어디: LLM 에 보내는 후보 한 줄.
     # 교안: PRD 11번 간접 인젝션. 반려동물 가능 여부는 저장된 값을 그대로 보여 준다(취향 · 동행 반영용).
     pet = f' | 반려동물: {c["pet"].get("범위")}' if c.get("pet") and c["pet"].get("범위") else ""
     museum = " | [박물관류]" if c.get("category") == config.MUSEUM_CLASS else ""
-    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
+    where = f" | [구역 {zone}]" if zone else ""   # 코드가 좌표로 묶은 구역(graph/state.py zone_labels)
+    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum}{where} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
 
 
 def _day_lines(dates: list, weather: dict) -> list:
@@ -125,12 +127,16 @@ def draft_update(llm, trace):
         conditions = {k: req.get(k) for k in ("region", "place", "companions", "preferences", "exclusions")}
         # 왜: 후보와 지난 위반 사유는 외부 문장이 섞여 있어 태그 안에 둔다. 어디: LLM 에 보내는 입력 전체.
         # 교안: PRD 11번 <후보 장소> 태그. 후보 밖 id 는 부가 코스에서는 아래에서 코드가 버리고, 본 코스는 6단계가 걸러 낸다.
-        user = (f"조건: {conditions}\n하루 칸: {' · '.join(slots_for(req, cands))}\n여행일:\n" + "\n".join(_day_lines(dates, state.get("weather", {})))
+        limit = config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM)
+        zones, between = zone_labels(cands, len(dates) or req.get("days") or 1, limit)
+        zone_line = ("\n구역 사이 거리(직선): " + ", ".join(f"{a}–{b} 약 {km}km" for a, b, km in between) + f". 연속한 두 장소는 {limit}km 를 넘으면 안 됩니다.") if zones else ""
+        _v = lambda c: _view(c, zones.get(c["id"]))
+        user = (f"조건: {conditions}\n하루 칸: {' · '.join(slots_for(req, cands))}{zone_line}\n여행일:\n" + "\n".join(_day_lines(dates, state.get("weather", {})))
                 + "\n휴무 표:\n" + ("\n".join(_rest_lines(state.get("rest_table", {}), titles)) or "없음")
-                + "\n<후보 장소>\n[가볼 곳]\n" + "\n".join(_view(c) for c in sights)
-                + "\n[음식점]\n" + "\n".join(_view(c) for c in foods) + "\n</후보 장소>"
-                + "\n<부가 코스 후보>\n" + ("\n".join(_view(c) for c in indoor) or "없음") + "\n</부가 코스 후보>"
-                + "\n<카페 후보>\n" + ("\n".join(_view(c) for c in cafes) or "없음") + "\n</카페 후보>")
+                + "\n<후보 장소>\n[가볼 곳]\n" + "\n".join(_v(c) for c in sights)
+                + "\n[음식점]\n" + "\n".join(_v(c) for c in foods) + "\n</후보 장소>"
+                + "\n<부가 코스 후보>\n" + ("\n".join(_v(c) for c in indoor) or "없음") + "\n</부가 코스 후보>"
+                + "\n<카페 후보>\n" + ("\n".join(_v(c) for c in cafes) or "없음") + "\n</카페 후보>")
         bad = state.get("violations") or []
         if bad:
             user += "\n지난 코스의 위반 사유(고쳐서 다시 짭니다):\n" + "\n".join(
@@ -324,6 +330,8 @@ def respond_update(state) -> dict:
         notices.append(f"후보에 없는 장소 {dropped}곳은 뺐습니다.")
     # 왜: 재작성을 다 쓰고도 규칙에 맞지 않은 장소는 코스에서 빼고 숨기지 않고 알린다. 어디: 6단계 validate_course 가 남긴 removed.
     # 교안: PRD 10번 "위반 장소 제거 + '확인 필요' 표시".
+    for r in state.get("replaced") or []:
+        notices.append(f"{_label(r['date'])} {r['slot']} 칸은 이동 거리가 멀어 {(cands.get(r['id']) or {}).get('title', r['id'])}(으)로 바꿨습니다.")
     for v in state.get("removed") or []:
         name = (cands.get(v["id"]) or {}).get("title") or v["id"]
         notices.append(f"확인 필요: {_label(v['date'])} {v['slot']} {name} — 규칙에 맞지 않아 뺐습니다({v['rule']}).")

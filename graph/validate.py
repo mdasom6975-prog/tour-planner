@@ -88,6 +88,55 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
     return out
 
 
+def _fits(c: dict, slot: str) -> bool:
+    """후보가 그 칸에 들어갈 수 있는 종류인가(가볼 곳 칸 · 식사 칸 · 카페 칸)."""
+    if slot == config.CAFE_SLOT:
+        return bool(c.get("is_cafe"))
+    if slot in ("점심", "저녁"):
+        return c.get("type") in config.FOOD_TYPES and not c.get("is_cafe")
+    return c.get("type") in config.SIGHT_TYPES
+
+
+def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None,
+                    exclusions: list | None, rest_table: dict | None = None) -> tuple:
+    """거리 위반이 남은 칸을, 그 날의 규칙을 모두 지키는 가장 가까운 미사용 후보로 바꾼다. (새 코스, [바꾼 칸 {date, slot, old_id, id}])."""
+    # 왜: 재작성을 다 쓰고도 거리 위반이 남으면 칸을 비운 코스가 나갔다(제주 3일 6회 중 2회). 칸을 비우기 전에 코드가 규칙에 맞는 후보를 찾아 넣는다. 어디: validate_course, 재작성 횟수를 다 쓴 뒤.
+    # 교안: 설계 원칙 "판정은 코드가". 2026-11-17 결정. 바꿀 후보가 없으면 예전처럼 그 칸을 뺀다.
+    rest_table, replaced = rest_table or {}, []
+    course = {**course, "days": [{**d, "slots": [dict(s) for s in d["slots"]]} for d in course.get("days", [])]}
+    check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions)
+    for _ in range(sum(len(d["slots"]) for d in course["days"])):   # 한 번에 한 칸씩, 더 고칠 것이 없을 때까지
+        bad = next((v for v in check(course) if v["rule"] == "distance" and v["slot"]), None)
+        if bad is None:
+            break
+        day = next(d for d in course["days"] if d["date"] == bad["date"])
+        at = next(n for n, s in enumerate(day["slots"]) if s["slot"] == bad["slot"])
+        used = {s["content_id"] for d in course["days"] for s in d["slots"]}
+        done = {(r["date"], r["slot"]) for r in replaced}
+        best = None
+        for n in (at, at - 1):   # 위반은 "앞 장소 → 이 장소" 구간이다. 이 칸을 먼저 바꿔 보고, 안 되면 앞 칸을 바꿔 본다
+            if n < 0 or (day["date"], day["slots"][n]["slot"]) in done:
+                continue
+            for cid, c in cands.items():
+                if cid in used or not _fits(c, day["slots"][n]["slot"]) or rest_table.get(cid, {}).get(day["date"]) == "closed":
+                    continue
+                trial_day = {**day, "slots": [{**s, "content_id": cid, "reason": config.REPLACED_REASON} if i == n else s for i, s in enumerate(day["slots"])]}
+                trial = {**course, "days": [trial_day if d["date"] == day["date"] else d for d in course["days"]]}
+                if any(v["date"] == day["date"] or v["rule"] in ("museum_limit", "duplicate") for v in check(trial)):
+                    continue
+                legs = _legs(trial_day["slots"], cands)
+                if legs and (best is None or legs[0] < best[0]):
+                    best = (legs[0], n, cid, trial)
+            if best:
+                break
+        if best is None:
+            break   # 바꿀 후보가 없다. 남은 위반은 호출한 쪽이 예전처럼 뺀다
+        _, n, cid, trial = best
+        replaced.append({"date": day["date"], "slot": day["slots"][n]["slot"], "old_id": day["slots"][n]["content_id"], "id": cid})
+        course = trial
+    return course, replaced
+
+
 def _legs(slots: list, cands: dict):
     """연속한 칸 사이 직선거리의 (합, 가장 긴 구간). 좌표를 못 구하면 None."""
     total, longest, prev = 0.0, 0.0, None
@@ -155,6 +204,14 @@ def validate_update(stored: dict | None, detail, trace):
         # 왜: 두 번 고쳐도 남은 위반은 그 장소를 빼고 "확인 필요"로 알린다(없는 장소 · 규칙 위반 장소를 코스에 남기지 않는다). 어디: 재작성 횟수를 다 쓴 뒤.
         # 교안: PRD 10번 "위반 & 재작성 = 2 → 위반 장소 제거 + '확인 필요' 표시".
         exhausted = retries_of(state)["draft"] > config.MAX_REDRAFTS
+        if exhausted and any(v["rule"] == "distance" for v in violations):
+            fixed, replaced = repair_distance(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
+            if replaced:
+                # 바꿔 넣은 장소도 휴무를 다시 받아 검사한다. 걸리면 아래에서 예전처럼 그 칸을 뺀다
+                rechecked.update(_recheck([r["id"] for r in replaced if r["id"] not in rechecked], stored, detail))
+                course, out["course"], out["replaced"], out["rechecked"] = fixed, fixed, replaced, rechecked
+                violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
+                out["violations"] = violations
         if violations and exhausted:
             bad = {(v["date"], v["slot"]) for v in violations if v["slot"]}
             out["course"] = {**course, "days": [{**d, "slots": [s for s in d["slots"] if (d["date"], s["slot"]) not in bad]} for d in course["days"]]}

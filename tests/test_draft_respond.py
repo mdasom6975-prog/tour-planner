@@ -193,3 +193,9 @@ def test_이유_문장에_연락처나_링크가_있으면_문장을_통째로_�
     got = pack_course(Course.model_validate({"days": [{"date": D1, "slots": [{"slot": "오전", "content_id": "s0", "reason": "링크 https://x.example"}]}],
                                              "rain_reason": "문의 010-1111-2222", "backup": [], "cafes": []}), [], [])
     assert got["days"][0]["slots"][0]["reason"] == config.REASON_REMOVED_TEXT and got["rain_reason"] == config.REASON_REMOVED_TEXT
+
+
+def test_구역_표시는_후보가_퍼져_있을_때만_지시문에_들어간다():
+    from graph.course import DRAFT_SYSTEM, _view
+    assert "[구역 A]" in _view({"id": "1", "type": "관광지", "title": "t", "addr": "a"}, "A") and "구역" not in _view({"id": "1", "type": "관광지", "title": "t", "addr": "a"})
+    assert "한 구역 안에서 고릅니다" in DRAFT_SYSTEM

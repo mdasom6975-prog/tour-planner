@@ -35,10 +35,10 @@ EDIT_SYSTEM = """당신은 이미 짠 국내 여행 코스를 사용자의 수�
 
 # 왜: 체크포인터가 이전 턴 State 를 이어 주므로, 새 요청이면 지난 턴의 반복 횟수 · 위반 · 코스를 비워야 새 요청이 지난 값에 끌려가지 않는다. 어디: route 노드.
 # 교안: 3일차 05 checkpointer — 같은 thread 의 State 가 다음 호출에 그대로 이어진다.
-RESET_NEW = {"retries": {}, "violations": [], "removed": [], "course": {}, "course_error": "", "search_error": "", "candidates": [],
+RESET_NEW = {"retries": {}, "violations": [], "removed": [], "replaced": [], "course": {}, "course_error": "", "search_error": "", "candidates": [],
              "enough": False, "grade": {}, "weather": {}, "festivals": {}, "rest_table": {}, "answer": {}, "request": {},
              "edit_note": "", "edit_error": "", "add_terms": [], "add_places": [], "added": [], "query": ""}   # query: 지난 질문의 검색 질의가 새 질문에 남던 버그(2026-11-17)
-RESET_EDIT = {"retries": {}, "violations": [], "removed": [], "course_error": "", "edit_note": "", "edit_error": "",
+RESET_EDIT = {"retries": {}, "violations": [], "removed": [], "replaced": [], "course_error": "", "edit_note": "", "edit_error": "",
               "add_terms": [], "add_places": [], "added": []}
 
 

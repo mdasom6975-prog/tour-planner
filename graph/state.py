@@ -1,4 +1,5 @@
 """그래프 State. 노드가 읽고 쓰는 값을 한곳에 적는다. (PRD 10번, 14번 5단계)"""
+import math
 import operator
 import config
 from typing import Annotated, TypedDict
@@ -21,6 +22,7 @@ class State(TypedDict, total=False):
     course_error: str    # draft_course 가 쓰지 못했을 때의 오류 이름
     rechecked: dict      # validate_course 가 관광공사에서 다시 받은 장소별 휴무 값 · 출처(live/stored) · 기준일
     removed: list       # 재작성을 다 쓰고도 남아 코스에서 뺀 위반 장소
+    replaced: list      # 재작성을 다 쓰고도 거리 위반이 남아 코드가 가까운 후보로 바꿔 넣은 칸
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
     mode: str            # route 가 정한 이번 턴의 종류: new(새 요청) | edit(이미 나온 코스 고치기)
@@ -33,6 +35,41 @@ class State(TypedDict, total=False):
     # 왜: 노드마다 한 줄씩 덧붙여야 해서 합치는 방식(덧붙이기)을 정한다. 어디: 실행 기록 줄 목록.
     # 교안: 3일차 05 State 의 reducer — 같은 칸에 여러 노드가 쓸 때 어떻게 합칠지 지정한다.
     trace: Annotated[list, operator.add]
+
+
+def _point(c: dict):
+    try:
+        return float(c["lat"]), float(c["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _km(a, b) -> float:
+    # 구역을 나누는 데만 쓰는 근사 거리(위도 1도 ≈ 111km). 규칙 판정의 거리는 tools/geo.py 가 계산한다
+    return math.hypot((a[0] - b[0]) * 111.0, (a[1] - b[1]) * 111.0 * math.cos(math.radians((a[0] + b[0]) / 2)))
+
+
+def zone_labels(candidates: list, days: int, limit: float) -> tuple:
+    """후보를 좌표로 가까운 것끼리 묶어 ({id: "A"}, [("A", "B", 거리km), ...]) 를 돌려준다. 후보가 상한 안에 모여 있으면 ({}, [])."""
+    pts = {c["id"]: p for c in candidates if (p := _point(c))}
+    ids = sorted(pts)
+    if len(ids) < 2 or max(_km(pts[a], pts[b]) for a in ids for b in ids) <= limit:
+        return {}, []
+    k = min(max(days or 1, 2), len(config.ZONE_NAMES), len(ids))
+    # 처음 중심은 서로 가장 먼 점들로 잡는다(같은 입력이면 같은 결과). 그 뒤 "가장 가까운 중심에 붙이고 중심을 다시 계산"을 되풀이한다
+    centers = [pts[ids[0]]]
+    while len(centers) < k:
+        centers.append(pts[max(ids, key=lambda i: min(_km(pts[i], c) for c in centers))])
+    for _ in range(10):
+        groups = [[] for _ in centers]
+        for i in ids:
+            groups[min(range(len(centers)), key=lambda n: _km(pts[i], centers[n]))].append(i)
+        centers = [(sum(pts[i][0] for i in g) / len(g), sum(pts[i][1] for i in g) / len(g)) if g else c for g, c in zip(groups, centers)]
+    order = sorted((n for n, g in enumerate(groups) if g), key=lambda n: centers[n][1])   # 서쪽부터 A, B, C
+    name = {n: config.ZONE_NAMES[pos] for pos, n in enumerate(order)}
+    labels = {i: name[n] for n, g in enumerate(groups) for i in g}
+    between = [(name[a], name[b], round(_km(centers[a], centers[b]))) for x, a in enumerate(order) for b in order[x + 1:]]
+    return labels, between
 
 
 def hits_exclusion(place: dict, exclusions: list | None) -> str | None:
