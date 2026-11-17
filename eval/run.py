@@ -50,8 +50,8 @@ def stored_only(operation: str, params: dict) -> dict:
 
 
 def _course_view(answer: dict) -> list:
-    """코스에서 채점에 쓸 값만 남긴다. 소개글 같은 관광공사 문장은 기록에 넣지 않는다."""
-    return [{"date": d["date"], "slots": [{"slot": s["slot"], "id": s["id"], "title": s["title"]} for s in d.get("slots", [])]}
+    """코스에서 채점에 쓸 값만 남긴다. 소개글 같은 관광공사 문장은 기록에 넣지 않는다. 고른 이유(모델이 쓴 문장)는 근거성 채점(8-4)에 쓴다."""
+    return [{"date": d["date"], "slots": [{"slot": s["slot"], "id": s["id"], "title": s["title"], "reason": s.get("reason", "")} for s in d.get("slots", [])]}
             for d in answer.get("days", [])]
 
 
@@ -77,7 +77,7 @@ def run_item(item: dict, retriever, llm=None, provider: str | None = None) -> di
         steps = trace.steps[seen:]
         turns.append({
             "message": text, "kind": answer.get("kind"), "mode": out.get("mode"),
-            "request": {k: (out.get("request") or {}).get(k) for k in ("region", "place", "start_date", "days", "companions", "preferences", "exclusions", "missing", "notes")},
+            "request": {k: (out.get("request") or {}).get(k) for k in ("region", "place", "start_date", "days", "companions", "preferences", "exclusions", "cannot_do", "missing", "notes")},
             "missing": answer.get("missing", []), "text": answer.get("text", ""), "notices": answer.get("notices", []),
             "course": _course_view(answer),
             "backup": [{"id": b.get("id"), "title": b.get("title")} for b in answer.get("backup", [])],
