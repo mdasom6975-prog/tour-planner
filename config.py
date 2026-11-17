@@ -16,7 +16,7 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER") or "claude"
 # 교안: 직접 대응 없음. 모델마다 받는 설정 이름이 달라 제공자별로 적는다(지시문 · 검색 결과는 두 모델이 같다).
 MODEL_OPTIONS = {
     "claude": {"output_config": {"effort": "low"}},
-    "openai": {},
+    "openai": {"reasoning_effort": "low"},   # 2026-11-17 결정: Claude 의 effort low 와 맞춘다(기본값은 추론 없음)
 }
 # LLM 채점자는 비교 대상과 무관하게 고정한다 (PRD 12-2).
 JUDGE_MODEL = "anthropic:claude-haiku-5-5"
@@ -170,6 +170,13 @@ EVAL_COURSE_SET = "eval/course_set.jsonl"
 EVAL_RUNS_DIR = "runs/eval"       # 문항별 실행 기록(관광공사 문장이 섞여 git 에 올리지 않는다). 비교표는 eval/results/
 EVAL_RESULTS_DIR = "eval/results"   # 채점 결과표(장소 이름과 숫자만). git 에 올린다
 EVAL_MAX_SEC = 30                   # 요청 1건 소요 합격선 (PRD 12-2)
+# 왜: 비교표의 비용 열은 실행 기록의 토큰 수에 공식 단가를 곱해 계산한다(PRD 12-2). 단가는 바뀌므로 확인한 날짜와 출처를 함께 적는다. 어디: eval/compare.py.
+# 교안: 2일차 Part3 비교표의 비용 열. 단위는 100만 토큰당 달러(입력, 출력). 캐시 · 배치 할인은 쓰지 않아 넣지 않았다.
+PRICES_CHECKED = "2026-11-17"   # platform.claude.com/docs/en/about-claude/pricing · developers.openai.com/api/docs/pricing
+PRICES_PER_MTOK = {
+    "anthropic:claude-sonnet-5-5": (2.00, 10.00),
+    "openai:gpt-5.4-mini": (0.75, 4.50),
+}
 GROUND_PASS_RATE = 0.9        # 근거성 합격선(PRD 12-2): 근거 있는 이유 문장 90% 이상
 GROUND_SOURCE_CHARS = 1500    # 채점자에게 보여 주는 소개글 길이. 코스 작성은 앞부분(SNIPPET_CHARS)만 보지만 채점은 출처 문서를 넉넉히 본다
 GROUND_NEAR_KM = 5.0          # 이유 문장의 "가깝다 · 근처 · 이동이 짧다"를 인정하는 직전 장소와의 직선 거리(2026-11-17 정함: 사람 표본에서 3.6km 는 인정, 8km 대는 불인정)
