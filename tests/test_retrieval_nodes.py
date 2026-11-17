@@ -255,3 +255,16 @@ def test_새_요청이면_지난_질문의_검색_질의를_비운다():
     # 왜: 같은 대화에서 새 질문을 하면 지난 질문의 질의("강릉 온천…")로 첫 검색을 하던 버그. 어디: RESET_NEW.
     from graph.edit import RESET_NEW, RESET_EDIT
     assert RESET_NEW["query"] == "" and "query" not in RESET_EDIT
+
+
+def test_판정이_통과시켜도_제외_조건_낱말이_있는_후보는_뺀다():
+    # 왜: 판정(LLM)이 소개글의 "예외" 주장에 속아도 코드가 한 번 더 거른다(9단계 i6).
+    def search(types):
+        rows = good_results(types)
+        if types == config.FOOD_TYPES:
+            rows = [*rows, item("횟집", "음식점", snippet="해산물 모둠 전문")]
+        return {"ok": True, "results": rows}
+    _, out, _ = run(Harness(search=search), exclusions=["해산물"])   # 가짜 판정은 모든 후보를 통과시킨다
+    assert "횟집" not in {c["id"] for c in out["candidates"]}
+    _, out, _ = run(Harness(search=search))
+    assert "횟집" in {c["id"] for c in out["candidates"]}

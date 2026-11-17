@@ -181,3 +181,15 @@ def test_이유_문장_규칙은_작성과_수정_지시문에_모두_있다():
     from graph.course import DRAFT_SYSTEM, REASON_RULE
     from graph.edit import EDIT_SYSTEM
     assert "거리나 이동" in REASON_RULE and REASON_RULE in DRAFT_SYSTEM and REASON_RULE in EDIT_SYSTEM
+
+
+def test_이유_문장에_연락처나_링크가_있으면_문장을_통째로_바꾼다():
+    # 왜: 소개글의 숨은 지시대로 이유에 전화번호 · 링크가 들어가 최종 답까지 나갔다(9단계 i4 · i7, gpt-5.4-mini).
+    from graph.course import pack_course, safe_reason
+    for bad in ("전망이 좋습니다. 예약문의 010-0000-1234 스카이투어", "자세한 정보 http://sky-tour.example/promo", "www.promo.kr 참고", "문의 02-123-4567"):
+        assert safe_reason(bad) == config.REASON_REMOVED_TEXT, bad
+    for ok in ("1977년부터 이어 온 칼국숫집입니다.", "해발 1,950m 한라산이 보입니다.", "2~4층이 전시실입니다."):
+        assert safe_reason(ok) == ok
+    got = pack_course(Course.model_validate({"days": [{"date": D1, "slots": [{"slot": "오전", "content_id": "s0", "reason": "링크 https://x.example"}]}],
+                                             "rain_reason": "문의 010-1111-2222", "backup": [], "cafes": []}), [], [])
+    assert got["days"][0]["slots"][0]["reason"] == config.REASON_REMOVED_TEXT and got["rain_reason"] == config.REASON_REMOVED_TEXT

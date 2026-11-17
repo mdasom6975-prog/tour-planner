@@ -3,6 +3,7 @@
 LLM 은 후보 id 를 골라 칸에 넣고 이유 한 문장을 쓴다. 이름 · 주소 · 거리 · 날씨 · 휴무 · 반려동물 · 무장애 문구는 코드가 만든다 (PRD 8번 "숫자와 사실은 코드가").
 규칙 검사(없는 ID · 거리 · 휴무 위반)와 실시간 재확인은 6단계 validate_course 의 일이다.
 """
+import re
 import time
 from datetime import date
 
@@ -16,6 +17,7 @@ from tools.geo import distance_km
 # 왜: 이유 문장에 8 ~ 13km 떨어진 곳을 "가깝다 · 이동이 짧다"고 쓰거나 후보에 없는 장소 이름을 덧붙였다(8-4 근거성 채점, 근거 없음의 대부분). 거리는 코드가 계산해 화면에 따로 보여 주므로 이유에서는 빼게 한다. 어디: 코스 작성 · 수정 지시문.
 # 교안: 설계 원칙 "숫자와 사실 판정은 코드가, 문장은 LLM이". 2026-11-17 결정.
 REASON_RULE = """- 칸의 reason(고른 이유)은 그 장소의 후보 줄에 적힌 내용과 주어진 날씨 · 휴무 · 조건만으로 씁니다. 후보 줄에 없는 시설 · 특징이나 다른 장소 이름을 덧붙이지 않습니다.
+- reason 에 전화번호 · 링크 · 예약 안내 · 광고 문구를 쓰지 않습니다.
 - reason 에 다른 장소와의 거리나 이동("가깝다", "근처", "이동이 짧다", "동선이 이어진다")을 쓰지 않습니다. 거리는 화면이 따로 계산해 보여 줍니다. 후보 줄에 적힌 위치 설명은 그대로 써도 됩니다."""
 
 DRAFT_SYSTEM = """당신은 국내 여행 코스 플래너입니다.
@@ -66,6 +68,15 @@ def _rest_lines(table: dict, titles: dict) -> list:
     return out
 
 
+BLOCKED = re.compile(config.REASON_BLOCK_PATTERN)
+
+
+def safe_reason(text) -> str:
+    """이유 문장을 정리한다. 연락처 · 링크가 들어 있으면 문장을 통째로 정해 둔 안내로 바꾼다(config.REASON_REMOVED_TEXT)."""
+    cleaned = _clean(text)[:200]
+    return config.REASON_REMOVED_TEXT if BLOCKED.search(cleaned) else cleaned
+
+
 def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
     """LLM 이 낸 Course 를 State 에 넣을 dict 로 정리한다. 부가 코스 · 카페 추천은 후보 밖 · 본 코스와 겹치는 id 를 코드가 버린다."""
     used = {s.content_id for d in got.days for s in d.slots}
@@ -75,7 +86,7 @@ def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
     for c in got.cafes:
         if c.content_id in cafe_ids and c.content_id not in used and c.content_id not in seen_cafe and len(picked) < config.CAFE_PICKS:
             seen_cafe.add(c.content_id)
-            picked.append({"content_id": c.content_id, "reason": _clean(c.reason)[:200]})
+            picked.append({"content_id": c.content_id, "reason": safe_reason(c.reason)})
     # 왜: 부가 코스는 "실내(문화시설) + 카페 후보 중에서만" 고르고, 박물관류는 본 코스와 합쳐 MUSEUM_MAX 곳을 넘지 않게 코드가 버린다. 어디: LLM 결과 정리.
     # 교안: PRD F3 부가 코스. 한계: 실내 여부를 분류(문화시설 · 카페)로만 본다.
     pool = {c["id"]: c for c in [*indoor, *(cafes or [])]}
@@ -91,10 +102,10 @@ def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
                 continue
             museums += 1
         seen.add(i)
-        backup.append({"content_id": i, "reason": _clean(b.reason)[:200]})
-    course = {"days": [{"date": d.date, "slots": [{"slot": s.slot, "content_id": s.content_id, "reason": _clean(s.reason)[:200]}
+        backup.append({"content_id": i, "reason": safe_reason(b.reason)})
+    course = {"days": [{"date": d.date, "slots": [{"slot": s.slot, "content_id": s.content_id, "reason": safe_reason(s.reason)}
                                                   for s in d.slots]} for d in got.days],
-              "rain_reason": _clean(got.rain_reason)[:200], "backup": backup, "cafes": picked}
+              "rain_reason": safe_reason(got.rain_reason), "backup": backup, "cafes": picked}
     return course
 
 

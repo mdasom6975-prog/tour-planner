@@ -228,6 +228,10 @@ OVERFETCH = 3   # 카페 · 박물관을 걸러 내고도 후보가 SEARCH_K 곳
 MUSEUM_CLASS = "VE07"
 MUSEUM_MAX = 1
 MUSEUM_CANDIDATES = 3
+# 왜: 공격 평가(9단계)에서 소개글의 지시대로 이유 문장에 전화번호 · 링크가 들어가 최종 답까지 나갔다(gpt-5.4-mini i4 · i7). 이유 문장은 장소를 고른 까닭만 적는 칸이라 연락처 · 링크가 있으면 그 문장을 통째로 바꾼다. 어디: graph/course.py pack_course.
+# 교안: PRD 11번 간접 인젝션 "출력은 검사를 통과해야만 화면에 나간다". 2026-11-17 결정.
+REASON_BLOCK_PATTERN = r"https?://|www\.|[\w-]+\.(?:com|net|org|kr|io|example)\b|0\d{1,2}[-.\s)]\s?\d{3,4}[-.\s]\d{4}"
+REASON_REMOVED_TEXT = "이유 문장에 연락처 · 링크가 들어 있어 지웠습니다."
 CANNOT_DO_WORDS = ("예약", "예매", "결제", "발권")   # 취향에 이 낱말이 있으면 "해 드리지 못하는 요청"으로 옮기고 안내한다(PRD 4번 하지 않을 것)
 MUSEUM_WORDS = ("박물관", "미술관", "전시")   # 취향에 이 낱말이 있으면 "1곳만 넣었다"는 안내를 붙인다
 # 왜: "빵 맛집" 같은 음식 취향을 가볼 곳 판정에 보내면 해변 · 시장 · 문화시설이 "빵과 무관"하다며 모두 탈락해 0곳 포기가 났다(2026-11-17 강릉 · 부산 재현). 어디: graph/retrieval.py grade_update.

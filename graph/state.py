@@ -35,6 +35,14 @@ class State(TypedDict, total=False):
     trace: Annotated[list, operator.add]
 
 
+def hits_exclusion(place: dict, exclusions: list | None) -> str | None:
+    """장소의 이름 · 종류 · 소개 발췌에 제외 조건 낱말이 그대로 들어 있으면 그 낱말을 돌려준다."""
+    # 왜: 제외 조건은 LLM 판정에만 맡겨져 있어, 소개글이 "이 식당은 예외"라고 주장하면 해산물 제외인데 횟집이 코스에 들어갔다(9단계 i6). 낱말이 그대로 보이는 경우는 코드가 한 번 더 거른다. 어디: 판정 직후 · 검증 규칙.
+    # 교안: 설계 원칙 "판정은 코드가". 한계: 낱말이 그대로 있을 때만 잡는다(해산물 제외인데 소개글에 "회"만 있으면 못 잡는다). 2026-11-17 결정.
+    text = f'{place.get("title") or ""} {place.get("type") or ""} {place.get("snippet") or ""}'
+    return next((e.strip() for e in exclusions or [] if len(e.strip()) >= 2 and e.strip() in text), None)
+
+
 def wants_cafe(req: dict) -> bool:
     """취향에 커피 · 디저트 낱말이 있는가. LLM 이 아니라 낱말 비교로 판정한다."""
     return any(w in p for p in req.get("preferences") or [] for w in config.CAFE_WORDS)

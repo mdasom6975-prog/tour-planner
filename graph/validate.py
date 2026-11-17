@@ -10,7 +10,7 @@ from datetime import date
 
 import config
 from graph.context import _label, trip_dates
-from graph.state import retries_of, slots_for
+from graph.state import hits_exclusion, retries_of, slots_for
 from tools.geo import distance_km
 from tools.rest import rest_on
 
@@ -36,7 +36,8 @@ def _recheck(ids: list, stored: dict, detail) -> dict:
     return dict(one(cid) for cid in ids)
 
 
-def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None = None) -> list:
+def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None = None,
+                    exclusions: list | None = None) -> list:
     """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다."""
     out, seen, museums = [], set(), 0
     limit = config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM)
@@ -67,6 +68,9 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                 museums += 1
                 if museums > config.MUSEUM_MAX:
                     out.append(_v("museum_limit", f"박물관 · 미술관 · 전시관은 코스에 {config.MUSEUM_MAX}곳만 넣을 수 있습니다. {c.get('title')} 은(는) 다른 종류로 바꾸세요.", cid, d["date"], s["slot"]))
+            hit = hits_exclusion(c, exclusions)   # 제외 조건 낱말이 이름 · 소개에 그대로 있는 장소(9단계 i6: 판정이 통과시켜도 여기서 막는다)
+            if hit:
+                out.append(_v("excluded", f"{c.get('title')} 은(는) 제외 조건({hit})에 해당합니다. 다른 곳으로 바꾸세요.", cid, d["date"], s["slot"]))
             if cid in seen:
                 out.append(_v("duplicate", f"{c.get('title')} 이(가) 코스에 두 번 들어 있습니다.", cid, d["date"], s["slot"]))
             seen.add(cid)
@@ -139,7 +143,7 @@ def validate_update(stored: dict | None, detail, trace):
         need = list(dict.fromkeys(need))
         if need:
             rechecked.update(_recheck(need, stored, detail))
-        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())))
+        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
 
         # 왜: 휴무 표(5-4)는 저장분 기준이었다. 다시 받은 값으로 코스 장소의 칸을 덮어 써서 다시 쓸 때와 화면 표시가 같은 값을 보게 한다. 어디: rest_table.
         table = {k: dict(v) for k, v in (state.get("rest_table") or {}).items()}

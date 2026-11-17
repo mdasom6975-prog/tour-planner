@@ -8,7 +8,7 @@ import time
 
 import config
 from graph.schemas import Grade, NewQuery
-from graph.state import retries_of
+from graph.state import hits_exclusion, retries_of
 from harness.trace import Trace
 
 KINDS = {"sight": config.SIGHT_TYPES, "food": config.FOOD_TYPES}
@@ -166,6 +166,7 @@ def grade_update(llm, trace: Trace):
         # 교안: 직접 대응 없음(2026-11-17 결정). 숫자 판정은 코드가 — 지시문으로는 실행마다 결과가 달랐다.
         if _wants_museum(req):
             kept = [{**c, "kind": "sight"} if c["kind"] == "indoor" and c.get("category") != config.MUSEUM_CLASS else c for c in kept]
+        kept = [c for c in kept if not hits_exclusion(c, req.get("exclusions"))]   # 제외 조건 낱말이 그대로 보이는 후보는 판정이 통과시켜도 코드가 뺀다(9단계 i6)
         have ={k: sum(1 for c in kept if c["kind"] == k) for k in KINDS}
         # 왜: 박물관류는 코스에 MUSEUM_MAX 곳만 들어가므로 그 이상은 "가볼 곳" 수에 세지 않는다. 미술관 위주 요청에서 칸이 비던 문제(시나리오 4). 어디: 충분한가 판정.
         # 교안: 직접 대응 없음(2026-11-13 결정: 제한 유지, 빈 칸은 다른 종류로).
