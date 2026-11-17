@@ -2,7 +2,7 @@
 import config
 from graph.build import build_graph
 from graph.course import access_text, draft_update, pet_text, respond_update
-from graph.schemas import Course, Grade, TripRequest
+from graph.schemas import Course, DayPlan, Grade, Slot, TripRequest
 from harness.trace import Trace
 
 D1, D2 = "2026-11-21", "2026-11-22"
@@ -199,3 +199,24 @@ def test_구역_표시는_후보가_퍼져_있을_때만_지시문에_들어간�
     from graph.course import DRAFT_SYSTEM, _view
     assert "[구역 A]" in _view({"id": "1", "type": "관광지", "title": "t", "addr": "a"}, "A") and "구역" not in _view({"id": "1", "type": "관광지", "title": "t", "addr": "a"})
     assert "한 구역 안에서 고릅니다" in DRAFT_SYSTEM
+
+
+def course_result():
+    return Course(days=[DayPlan(date=D1, slots=[Slot(slot="오전", content_id="s0", reason="바다")])], rain_reason="")
+
+
+def test_야외를_원하면_비_예보_날도_실내_위주로_적지_않고_야외를_넣게_한다():
+    # 왜: 바다 · 산을 원해도 비 · 눈 날은 항상 실내만 나왔다(2026-11-17 사용자 요청). 어디: 코스 작성 입력의 날씨 줄 + 지시문.
+    _, seen = draft(course_result(), request={**state()["request"], "outdoor": True})
+    system, user, _ = seen[0]
+    assert "비 예보 — 야외를 원함" in user and "비 예보 — 실내 위주" not in user
+    assert "야외를 원함" in system
+    _, seen = draft(course_result())
+    assert "비 예보 — 실내 위주" in seen[0][1] and "야외를 원함" not in seen[0][1]
+
+
+def test_야외를_원했는데_비_눈_예보가_있으면_코드가_그_사실과_대비책을_알린다():
+    ans = respond_update(state(course=course(rain=""), request={**state()["request"], "outdoor": True}))["answer"]
+    assert any("요청하신 야외 코스를 넣었습니다" in n and "11/21(토)" in n for n in ans["notices"])
+    plain = respond_update(state(course=course()))["answer"]
+    assert not any("야외 코스를 넣었습니다" in n for n in plain["notices"])

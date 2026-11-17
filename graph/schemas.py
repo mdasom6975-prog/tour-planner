@@ -13,6 +13,7 @@ class TripRequest(BaseModel):
     preferences: list[str] = Field(default_factory=list, description="취향·바라는 것")
     exclusions: list[str] = Field(default_factory=list, description="빼 달라고 한 것")
     cannot_do: list[str] = Field(default_factory=list, description="이 서비스가 대신 해 줄 수 없는 요청(예약 · 예매 · 결제 등). 없으면 빈 목록")
+    outdoor: bool = Field(False, description="바다 · 산 · 해변 · 등산 · 오름 · 숲 · 산책처럼 야외에서 하는 활동을 하고 싶다고 분명히 말했으면 true. 아니면 false")
 
 
 class Grade(BaseModel):
