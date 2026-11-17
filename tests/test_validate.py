@@ -359,3 +359,41 @@ def test_재작성을_다_써도_취향_음식_반복은_칸을_비우지_않는
     assert any(v["rule"] == "theme_repeat" for v in out["violations"])
     assert "removed" not in out or not [v for v in out["removed"] if v["rule"] == "theme_repeat"]
     assert [s["content_id"] for s in out.get("course", state["course"])["days"][0]["slots"]].count("b1") == 1
+
+
+# --- 하루 총 이동 거리 상한 (2026-11-17) ----------------------------------------
+def spread_cands(step_deg):   # 한 줄(경도)로 step_deg 간격 장소 4개 + 식당 4개. 0.01도 ≈ 0.9km
+    # 칸 순서(p0 · q0 · p1 · q1)대로 경도가 한 칸씩 늘어나게 둔다
+    rows = [place("p0", "sight", "관광지", lon=128.90), place("q0", "food", "음식점", lon=128.90 + step_deg),
+            place("p1", "sight", "관광지", lon=128.90 + 2 * step_deg), place("q1", "food", "음식점", lon=128.90 + 3 * step_deg)]
+    return {c["id"]: c for c in rows}
+
+
+def one_day(ids):
+    return {"days": [{"date": D1, "slots": slots(ids)}]}
+
+
+def day_rules(cands, region):
+    return [v["rule"] for v in find_violations(one_day(["p0", "q0", "p1", "q1"]), cands, [D1], {}, region)]
+
+
+def test_하루_직선거리_합이_지역_상한을_넘으면_위반이다():
+    # 제주 하루 상한 38km. 칸 사이 0.1도(약 8.8km)씩이라 합 약 26km 는 통과, 0.2도(약 17.7km)씩이라 합 약 53km 는 위반이다.
+    assert "day_distance" not in day_rules(spread_cands(0.1), "제주")
+    assert "day_distance" in day_rules(spread_cands(0.2), "제주")
+
+
+def test_하루_상한이_없는_지역은_이_검사를_하지_않는다():
+    assert "day_distance" not in day_rules(spread_cands(0.2), "전북")
+
+
+def test_하루_합_위반은_칸을_비우거나_거리_위반_수리를_막지_않는다():
+    # 왜: 하루 합은 칸 하나의 문제가 아니라서 slot 이 없다. 재작성을 다 써도 칸을 빼지 않아야 한다. 어디: validate_course 제거 단계.
+    cands = spread_cands(0.2)
+    state = {"course": one_day(["p0", "q0", "p1", "q1"]), "candidates": list(cands.values()), "retries": {"draft": config.MAX_REDRAFTS + 1},
+             "request": {"region": "제주", "start_date": D1, "days": 1}}
+    from graph.validate import validate_update
+    out = validate_update({}, None, Trace(save=False))(state)
+    assert any(v["rule"] == "day_distance" and v["slot"] is None for v in out["violations"])
+    assert not out.get("removed")
+    assert len(out.get("course", state["course"])["days"][0]["slots"]) == 4
