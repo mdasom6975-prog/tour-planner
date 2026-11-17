@@ -86,6 +86,13 @@ def retrieve_update(search, areas: dict | None = None):
                 # 교안: 직접 대응 없음(2026-11-13 결정). 식당 후보 수는 다른 종류와 같은 한도(config.SEARCH_K)로 자른다.
                 cafes = [r for r in results if r.get("is_cafe")]
                 results = [r for r in results if not r.get("is_cafe")][:config.SEARCH_K]
+                # 왜: 취향 음식(닭강정 · 빵 …)을 낱말 목록으로 알아보면 목록 밖 취향이 쏠림 규칙을 빠져나간다(2026-11-17 닭강정 실행: 식사 4칸이 모두 닭). 지역 이름만으로 식당을 한 번 더 찾아, 취향 질의에만 잡힌 식당에 theme 표시를 단다. 어디: 음식점 검색 결과.
+                # 교안: 직접 대응 없음(2026-11-17 결정). validate_course 의 "취향 음식은 하루 1곳" 규칙이 이 표시를 쓴다.
+                if sight_query != query and not state.get("query"):
+                    base = search(sight_query, region=req.get("region"), types=types, area=area)
+                    generic = [r for r in base["results"] if not r.get("is_cafe")][:config.SEARCH_K] if base.get("ok") else []
+                    generic_ids = {r["id"] for r in generic}
+                    results = [{**r, "theme": r["id"] not in generic_ids} for r in results] + generic
                 for item in cafes[:config.SEARCH_K]:
                     found.setdefault(item["id"], {**item, "kind": "cafe"})
             if kind == "indoor":   # 박물관류가 위쪽을 채워도 다른 종류가 SEARCH_K 곳 남도록 나눠 자른다

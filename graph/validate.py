@@ -36,27 +36,17 @@ def _recheck(ids: list, stored: dict, detail) -> dict:
     return dict(one(cid) for cid in ids)
 
 
-def theme_words(preferences: list | None) -> list:
-    """취향 문장에 들어 있는 구체적인 음식 낱말(config.THEME_WORDS)."""
-    return [w for w in config.THEME_WORDS if any(w in p for p in preferences or [])]
-
-
-def is_theme_food(place: dict, words: list) -> bool:
-    return any(w in f'{place.get("title") or ""} {place.get("snippet") or ""}' for w in words)
-
-
 def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None = None,
-                    exclusions: list | None = None, preferences: list | None = None) -> list:
+                    exclusions: list | None = None) -> list:
     """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다."""
     out, seen, museums = [], set(), 0
     limit = config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM)
     days = course.get("days", [])
     want_slots = slots or config.COURSE_SLOTS   # 커피 · 디저트 취향이면 카페 칸이 하나 더 있다(graph/state.py slots_for)
-    # 왜: 취향 음식(빵 등)이 점심 · 저녁을 모두 채우지 않게 한다. 식당 후보 중 취향 밖 식당이 칸 수만큼 없으면 지킬 수 없으므로 규칙을 끈다(재작성만 낭비한다). 어디: 식사 칸 검사.
-    # 교안: 직접 대응 없음(2026-11-17 결정). 한계: 이름 · 소개 발췌에 낱말이 그대로 있을 때만 취향 음식으로 본다.
-    words = theme_words(preferences)
-    others = sum(1 for c in cands.values() if c.get("kind") == "food" and not c.get("is_cafe") and not is_theme_food(c, words))
-    theme_on = bool(words) and others >= len(days) * max(sum(1 for n in want_slots if n in ("점심", "저녁")) - config.MAX_THEME_MEALS, 1)
+    # 왜: 취향 음식(닭강정 · 빵 등)이 점심 · 저녁을 모두 채우지 않게 한다. 검색이 단 theme 표시를 쓰므로 어떤 취향이든 된다. 취향 밖 식당 후보가 칸 수만큼 없으면 지킬 수 없어 규칙을 끈다(재작성만 낭비한다). 어디: 식사 칸 검사.
+    # 교안: 직접 대응 없음(2026-11-17 결정). 한계: 검색이 취향 질의로만 찾은 식당을 취향 음식으로 본다.
+    others = sum(1 for c in cands.values() if c.get("kind") == "food" and not c.get("is_cafe") and not c.get("theme"))
+    theme_on = any(c.get("theme") for c in cands.values()) and others >= len(days) * max(sum(1 for n in want_slots if n in ("점심", "저녁")) - config.MAX_THEME_MEALS, 1)
     if dates and [d["date"] for d in days] != dates:
         out.append(_v("dates", f"여행일은 {', '.join(dates)} 입니다. 코스의 날짜가 다릅니다."))
     for d in days:
@@ -78,10 +68,10 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                 out.append(_v("slot_type", f"{s['slot']} 칸에는 {'/'.join(want)} 유형만 넣을 수 있습니다. {c.get('title')}({c.get('type')}) 은(는) 맞지 않습니다.", cid, d["date"], s["slot"]))
             if s["slot"] in ("점심", "저녁") and c.get("is_cafe"):   # 카페는 식사 자리가 아니라 "근처 카페 추천"으로 따로 둔다
                 out.append(_v("cafe_meal", f"{s['slot']} 칸에는 식당을 넣어야 합니다. {c.get('title')} 은(는) 카페입니다.", cid, d["date"], s["slot"]))
-            if theme_on and s["slot"] in ("점심", "저녁") and is_theme_food(c, words):
+            if theme_on and s["slot"] in ("점심", "저녁") and c.get("theme"):
                 theme_meals += 1
                 if theme_meals > config.MAX_THEME_MEALS:
-                    out.append(_v("theme_repeat", f"{_label(d['date'])}은 {'·'.join(words)} 음식점을 {config.MAX_THEME_MEALS}곳까지만 넣을 수 있습니다. {c.get('title')} 은(는) 다른 종류의 식당으로 바꾸세요.", cid, d["date"], s["slot"]))
+                    out.append(_v("theme_repeat", f"{_label(d['date'])}은 [취향 음식] 식당을 {config.MAX_THEME_MEALS}곳까지만 넣을 수 있습니다. {c.get('title')} 은(는) 다른 종류의 식당으로 바꾸세요.", cid, d["date"], s["slot"]))
             if c.get("category") == config.MUSEUM_CLASS:   # 박물관류는 날씨와 상관없이 코스 전체에서 MUSEUM_MAX 곳까지
                 museums += 1
                 if museums > config.MUSEUM_MAX:
@@ -120,13 +110,13 @@ def _fits(c: dict, slot: str) -> bool:
 
 
 def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None,
-                    exclusions: list | None, rest_table: dict | None = None, preferences: list | None = None) -> tuple:
+                    exclusions: list | None, rest_table: dict | None = None) -> tuple:
     """거리 위반이 남은 칸을, 그 날의 규칙을 모두 지키는 가장 가까운 미사용 후보로 바꾼다. (새 코스, [바꾼 칸 {date, slot, old_id, id}])."""
     # 왜: 재작성을 다 쓰고도 거리 위반이 남으면 칸을 비운 코스가 나갔다(제주 3일 6회 중 2회). 칸을 비우기 전에 코드가 규칙에 맞는 후보를 찾아 넣는다. 어디: validate_course, 재작성 횟수를 다 쓴 뒤.
     # 교안: 설계 원칙 "판정은 코드가". 2026-11-17 결정. 바꿀 후보가 없으면 예전처럼 그 칸을 뺀다.
     rest_table, replaced = rest_table or {}, []
     course = {**course, "days": [{**d, "slots": [dict(s) for s in d["slots"]]} for d in course.get("days", [])]}
-    check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions, preferences)
+    check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions)
     for _ in range(sum(len(d["slots"]) for d in course["days"])):   # 한 번에 한 칸씩, 더 고칠 것이 없을 때까지
         bad = next((v for v in check(course) if v["rule"] == "distance" and v["slot"]), None)
         if bad is None:
@@ -214,7 +204,7 @@ def validate_update(stored: dict | None, detail, trace):
         need = list(dict.fromkeys(need))
         if need:
             rechecked.update(_recheck(need, stored, detail))
-        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), req.get("preferences"))
+        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
 
         # 왜: 휴무 표(5-4)는 저장분 기준이었다. 다시 받은 값으로 코스 장소의 칸을 덮어 써서 다시 쓸 때와 화면 표시가 같은 값을 보게 한다. 어디: rest_table.
         table = {k: dict(v) for k, v in (state.get("rest_table") or {}).items()}
@@ -227,12 +217,12 @@ def validate_update(stored: dict | None, detail, trace):
         # 교안: PRD 10번 "위반 & 재작성 = 2 → 위반 장소 제거 + '확인 필요' 표시".
         exhausted = retries_of(state)["draft"] > config.MAX_REDRAFTS
         if exhausted and any(v["rule"] == "distance" for v in violations):
-            fixed, replaced = repair_distance(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table, req.get("preferences"))
+            fixed, replaced = repair_distance(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
             if replaced:
                 # 바꿔 넣은 장소도 휴무를 다시 받아 검사한다. 걸리면 아래에서 예전처럼 그 칸을 뺀다
                 rechecked.update(_recheck([r["id"] for r in replaced if r["id"] not in rechecked], stored, detail))
                 course, out["course"], out["replaced"], out["rechecked"] = fixed, fixed, replaced, rechecked
-                violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), req.get("preferences"))
+                violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
                 out["violations"] = violations
         if violations and exhausted:
             # 취향 음식 반복(theme_repeat)은 규칙 위반이 아니라 쏠림이라, 재작성을 다 써도 칸을 비우지 않는다

@@ -274,8 +274,8 @@ def test_음식_취향은_식당과_카페_검색에만_보내고_가볼_곳과_
     # 왜: "강릉 빵 맛집"을 네 종류 검색에 모두 보내 순두부마을 · 커피거리가 가볼 곳을 채웠다(2026-11-17 측정). 어디: retrieve 첫 질의.
     h = Harness()
     run(h, preferences=["빵 맛집", "바다 산책"])
-    by_types = {tuple(s["types"]): s["query"] for s in h.searches}
-    assert by_types[tuple(config.FOOD_TYPES)] == "강릉 빵 맛집 바다 산책"
+    by_types = {tuple(s["types"]): s["query"] for s in h.searches if s["query"] != "강릉 바다 산책" or s["types"] != config.FOOD_TYPES}
+    assert [s["query"] for s in h.searches if s["types"] == config.FOOD_TYPES] == ["강릉 빵 맛집 바다 산책", "강릉 바다 산책"]   # 취향 질의 + 표시용 지역 질의
     assert by_types[tuple(config.SIGHT_TYPES)] == "강릉 바다 산책"
     assert by_types[tuple(config.INDOOR_TYPES)] == "강릉 바다 산책"
 
@@ -291,4 +291,28 @@ def test_질의를_고쳐_쓴_재시도에서는_모든_종류가_고친_질의�
     h = Harness(grades=[lambda i: False, None])   # 첫 판정은 모두 탈락 → 질의를 고쳐 다시 찾는다
     run(h, preferences=["빵 맛집"])
     queries = [s["query"] for s in h.searches]
-    assert queries[3:6] == [h.new_query] * 3   # 두 번째 검색(가볼 곳 · 음식점 · 실내)
+    assert queries[4:7] == [h.new_query] * 3   # 두 번째 검색(가볼 곳 · 음식점 · 실내). 첫 검색은 음식점을 둘로 찾아 4번
+
+
+def test_취향_질의로만_잡힌_식당에_theme_표시를_단다():
+    # 왜: 낱말 목록 없이 "닭강정" 같은 어떤 취향도 하루 1곳 규칙에 걸리게 한다(2026-11-17). 어디: retrieve 의 음식점 검색.
+    h = Harness()
+
+    def search(query, *, region, types, area):
+        h.searches.append({"query": query, "types": types})
+        if types != config.FOOD_TYPES:
+            return {"ok": True, "results": good_results(types)}
+        if "닭강정" in query:   # 취향 질의: 닭집 둘 + 일반 식당 하나(둘 다에 잡힘)
+            return {"ok": True, "results": [item("닭1", "음식점"), item("닭2", "음식점"), item("공통", "음식점")]}
+        return {"ok": True, "results": [item("공통", "음식점"), item("일반1", "음식점")]}   # 지역 이름만의 질의
+    h.search = search
+    _, out, _ = run(h, preferences=["닭강정 먹기"])
+    food = {c["id"]: c.get("theme") for c in out["candidates"] if c["kind"] == "food"}
+    assert food == {"닭1": True, "닭2": True, "공통": False, "일반1": None}
+
+
+def test_음식_취향이_없으면_식당을_한_번만_찾고_표시도_달지_않는다():
+    h = Harness()
+    _, out, _ = run(h, preferences=["바다 산책"])
+    assert sum(1 for s in h.searches if s["types"] == config.FOOD_TYPES) == 1
+    assert not any(c.get("theme") for c in out["candidates"])
