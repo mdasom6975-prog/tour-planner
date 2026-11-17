@@ -10,15 +10,15 @@ ROOT = Path(__file__).resolve().parent.parent
 ROWS = [json.loads(line) for line in (ROOT / "eval" / "course_set.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
 KINDS = {"course", "ask_back", "abstain"}
 EXPECT_KEYS = {"kind", "region", "place", "days", "start_date", "missing", "exclusions", "museum_max", "notice_has", "text_has",
-               "text_not", "title_has", "title_not", "mode", "changed"}
+               "text_not", "title_has", "title_not", "mode", "changed", "slots_has", "alt"}
 MISSING_CODES = {"region", "days", "start_date", "days_too_long", "unsupported_region", "parse_failed"}
 
 
-def test_40건이고_유형과_분할이_PRD와_같다():
-    # 왜: PRD 12-2 "4유형 40건, dev 28 / holdout 12". 유형마다 양쪽에 고르게 들어가야 holdout 이 한 유형으로 쏠리지 않는다.
-    assert len(ROWS) == 40 and len({r["id"] for r in ROWS}) == 40
-    assert Counter(r["split"] for r in ROWS) == {"dev": 28, "holdout": 12}
-    assert Counter(r["case"] for r in ROWS) == {"정상": 16, "경계": 8, "엣지": 8, "공격": 8}
+def test_41건이고_유형과_분할이_PRD와_같다():
+    # 왜: PRD 12-2 "4유형 40건, dev 28 / holdout 12" + c09 를 dev 로 옮기고 c17 추가(2026-11-17). 유형마다 양쪽에 고르게 들어가야 holdout 이 한 유형으로 쏠리지 않는다.
+    assert len(ROWS) == 41 and len({r["id"] for r in ROWS}) == 41
+    assert Counter(r["split"] for r in ROWS) == {"dev": 29, "holdout": 12}
+    assert Counter(r["case"] for r in ROWS) == {"정상": 17, "경계": 8, "엣지": 8, "공격": 8}
     assert all(Counter(r["case"] for r in ROWS if r["split"] == "holdout")[c] >= 2 for c in ("정상", "경계", "엣지", "공격"))
 
 
@@ -34,7 +34,7 @@ def test_문항마다_필요한_칸이_있고_값이_표_안에_있다():
             assert 1 <= exp["days"] <= config.MAX_TRIP_DAYS, r["id"]
         if exp.get("start_date"):   # 기대 날짜는 기준일 이후여야 한다(지난 날짜는 되묻기 문항이다)
             assert date.fromisoformat(exp["start_date"]) >= date.fromisoformat(r["today"]), r["id"]
-        if exp["kind"] == "course":
+        if exp["kind"] == "course":   # b05 는 모델이 읽는 연도가 정해져 있지 않아 날짜를 적지 않는다
             assert exp.get("region") and exp.get("days") and exp.get("start_date"), r["id"]
 
 

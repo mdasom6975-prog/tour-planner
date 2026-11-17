@@ -1,6 +1,6 @@
 """코스 평가셋을 그래프로 돌려 문항별 실행 기록을 남긴다. 채점은 여기 없다. (PRD 12-2, 14번 8-2)
 
-실행:  python -m eval.run                       (dev 28건, 기본 모델)
+실행:  python -m eval.run                       (dev 29건, 기본 모델)
        python -m eval.run --ids c01,b02         (고른 문항만)
        python -m eval.run --provider claude,openai
 """

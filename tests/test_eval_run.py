@@ -72,5 +72,5 @@ def test_평가의_실시간_재확인은_호출_없이_저장분을_쓴다():
 
 
 def test_평가셋은_분할로_고르고_id를_주면_그_문항만_고른다():
-    assert len(run.load_set("dev")) == 28 and len(run.load_set("holdout")) == 12 and len(run.load_set("all")) == 40
+    assert len(run.load_set("dev")) == 29 and len(run.load_set("holdout")) == 12 and len(run.load_set("all")) == 41
     assert [r["id"] for r in run.load_set("dev", ["a08", "c01"])] == ["c01", "a08"]
