@@ -157,7 +157,8 @@ def validate_update(stored: dict | None, detail, trace):
             out["removed"] = [v for v in violations if v["slot"]]
         # 왜: 최종 코스(위반이 없거나 재작성을 다 쓴 뒤)만 칸 순서를 맞바꿔 이동 거리를 줄인다. State 의 코스를 바꿔야 후속 수정이 화면과 같은 순서를 본다. 어디: 위반 처리 직후.
         # 교안: 직접 대응 없음(2026-11-17 결정).
-        if not violations or exhausted:
+        # 수정 턴(mode=edit)에서는 맞바꾸지 않는다: "점심만 바꿔 줘"에 오전 · 오후 · 저녁 자리까지 움직였다(dev e05, 2026-11-17). 요청한 칸만 바뀌어야 한다
+        if (not violations or exhausted) and state.get("mode") != "edit":
             final, limit, moved, days_new = out.get("course", course), config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM), [], []
             for d in final.get("days", []):
                 slots_new, changed = reorder_day(d["slots"], cands, limit)

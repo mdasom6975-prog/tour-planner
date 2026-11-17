@@ -258,3 +258,15 @@ def test_장소와_이유는_함께_움직이고_카페_칸은_제자리다():
     assert changed and [s["slot"] for s in got] == ["오전", "점심", "카페", "오후", "저녁"]
     assert next(s for s in got if s["slot"] == "카페")["content_id"] == "e"
     assert all(s["reason"] == "이유" + s["content_id"] for s in got)   # 이유는 장소를 따라간다
+
+
+def test_수정_턴에서는_칸을_맞바꾸지_않는다():
+    # 왜: "점심만 바꿔 줘" 뒤 검증에서 맞바꿈이 돌아 오전 · 오후 · 저녁 자리까지 움직였다(dev e05). 새 요청일 때만 맞바꾼다.
+    from graph.validate import validate_update
+    cands = [{**c, "kind": "food" if c["id"] in "bd" else "sight", "type": "음식점" if c["id"] in "bd" else "관광지"} for c in _cands(a=0.00, b=0.05, c=0.06, d=0.01).values()]   # 구간이 5km 안쪽이라 거리 위반은 없다
+    course = {"days": [{"date": "2026-11-21", "slots": [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]}], "backup": [], "cafes": []}
+    base = {"course": course, "candidates": cands, "request": {"region": "강릉", "start_date": "2026-11-21", "days": 1, "preferences": []}, "retries": {"draft": 1}}
+    update = validate_update({}, None, Trace(save=False))
+    order = lambda out: [s["content_id"] for s in out.get("course", course)["days"][0]["slots"]]
+    assert order(update({**base, "mode": "edit"})) == ["a", "b", "c", "d"]
+    assert order(update({**base, "mode": "new"})) != ["a", "b", "c", "d"]
