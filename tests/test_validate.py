@@ -315,3 +315,47 @@ def test_거리_위반이_남은_칸은_규칙을_지키는_가장_가까운_후
     assert fixed["days"][0]["slots"][2]["content_id"] == "near2"
     only = {k: v for k, v in cands.items() if k in ("a", "b", "far", "d")}
     assert repair_distance(course, only, ["2026-11-21"], {}, "강릉", None, None)[1] == []
+
+
+# --- 취향 음식 하루 1곳 (2026-11-17) -------------------------------------------
+def bread_cands(n_other=4):
+    rows = [place(f"b{n}", "food", "음식점", lon=128.90 + n * 0.01, title=f"빵집{n}") for n in range(2)]
+    rows += [place(f"o{n}", "food", "음식점", lon=128.90 + n * 0.01) for n in range(n_other)]
+    rows += [place(f"g{n}", "sight", "관광지", lon=128.90 + n * 0.01) for n in range(4)]
+    return {c["id"]: c for c in rows}
+
+
+def bread_course(meals):   # 하루: 오전 g0 · 점심 meals[0] · 오후 g1 · 저녁 meals[1]
+    return {"days": [{"date": D1, "slots": slots(["g0", meals[0], "g1", meals[1]])}]}
+
+
+def theme_rules(course, cands, prefs=("빵 맛집",)):
+    return [v["rule"] for v in find_violations(course, cands, [D1], {}, "강릉", None, None, list(prefs))]
+
+
+def test_취향_음식이_점심과_저녁을_모두_채우면_위반이다():
+    assert "theme_repeat" in theme_rules(bread_course(["b0", "b1"]), bread_cands())
+
+
+def test_취향_음식은_하루_한_곳이면_통과한다():
+    assert theme_rules(bread_course(["b0", "o0"]), bread_cands()) == []
+
+
+def test_취향에_음식_낱말이_없으면_이_규칙은_쓰지_않는다():
+    assert theme_rules(bread_course(["b0", "b1"]), bread_cands(), prefs=("바다 산책",)) == []
+
+
+def test_취향_밖_식당_후보가_모자라면_규칙을_끈다():
+    assert theme_rules(bread_course(["b0", "b1"]), bread_cands(n_other=0)) == []
+
+
+def test_재작성을_다_써도_취향_음식_반복은_칸을_비우지_않는다():
+    # 왜: 쏠림은 규칙 위반이 아니라서 칸을 빼면 코스만 줄어든다. 어디: validate_course 의 제거 단계.
+    cands = bread_cands()
+    state = {"course": bread_course(["b0", "b1"]), "candidates": list(cands.values()), "retries": {"draft": config.MAX_REDRAFTS + 1},
+             "request": {"region": "강릉", "start_date": D1, "days": 1, "preferences": ["빵 맛집"]}}
+    from graph.validate import validate_update
+    out = validate_update({}, None, Trace(save=False))(state)
+    assert any(v["rule"] == "theme_repeat" for v in out["violations"])
+    assert "removed" not in out or not [v for v in out["removed"] if v["rule"] == "theme_repeat"]
+    assert [s["content_id"] for s in out.get("course", state["course"])["days"][0]["slots"]].count("b1") == 1
