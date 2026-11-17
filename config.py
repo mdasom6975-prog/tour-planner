@@ -12,6 +12,12 @@ MODELS = {
     "openai": "openai:gpt-5.4-mini",
 }
 LLM_PROVIDER = os.getenv("LLM_PROVIDER") or "claude"
+# 왜: Opus 5.5 는 생각(thinking)을 끌 수 없고 effort 로만 깊이를 조절한다(기본 medium). 2026-11-17 측정: low 로 2일 코스 작성이 약 25초 → 16초. 어디: make_llm 이 모델을 만들 때.
+# 교안: 직접 대응 없음. 모델마다 받는 설정 이름이 달라 제공자별로 적는다(지시문 · 검색 결과는 두 모델이 같다).
+MODEL_OPTIONS = {
+    "claude": {"output_config": {"effort": "low"}},
+    "openai": {},
+}
 # LLM 채점자는 비교 대상과 무관하게 고정한다 (PRD 12-2).
 JUDGE_MODEL = "anthropic:claude-haiku-5-5"
 
@@ -105,6 +111,7 @@ HYBRID_W_DENSE = 0.5     # 임베딩 가중치 (BM25 는 1 - 이 값). 2026-11-1
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 RERANK_CANDIDATES = 30   # 재정렬에 넣는 후보 수. 2026-11-12 평가: 20곳은 0.832, 30곳은 0.863 → 0.6초 느려도 30곳 유지
 RERANK_K = 10            # 재정렬 뒤 남기는 수
+RERANK_BATCH = 4          # 한 번에 읽는 쌍의 수. 2026-11-17 측정(검색 4번 합계): 16 → 9.12초, 8 → 7.87초, 4 → 7.32초. 상위 10곳은 순서까지 같았다
 RERANK_ENABLED = True    # 끄면 합친 결과를 그대로 돌려준다 (평가에서 있음/없음을 비교하고, 너무 느릴 때 끈다)
 
 # --- 코스 규칙 (코드가 판정) ----------------------------------------------

@@ -7,7 +7,8 @@ import config
 def make_llm(provider: str | None = None, on_usage=None):
     # 왜: 결과를 JSON 스키마로 받고, 특정 도구 강제 호출과 temperature 는 쓰지 않는다(최신 Claude 가 받지 않음). 어디: 모든 LLM 노드.
     # 교안: 3일차 구조화 출력(with_structured_output). 테스트에서는 같은 모양의 가짜 함수로 바꾼다.
-    model = init_chat_model(config.MODELS[provider or config.LLM_PROVIDER])
+    provider = provider or config.LLM_PROVIDER
+    model = init_chat_model(config.MODELS[provider], **config.MODEL_OPTIONS.get(provider, {}))
 
     def llm(system: str, user: str, schema):
         if on_usage is None:

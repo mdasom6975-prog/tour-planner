@@ -110,8 +110,8 @@ def run_all(items: list, retriever, providers: list, out_dir: Path, llm=None, sa
     # 교안: 2일차 Part3 "회귀 비교표" — 실행 조건을 결과와 함께 남긴다.
     meta = {"started": datetime.now().isoformat(timespec="seconds"), "git": _git_sha(), "places": config.EVAL_COURSE_PLACES,
             "place_count": len(retriever.places), "items": [i["id"] for i in items],
-            "models": {p: config.MODELS[p] for p in providers}, "weather": "fixed", "detail": "stored",
-            "config": {k: getattr(config, k) for k in ("SEARCH_K", "OVERFETCH", "MAX_LEG_KM_BY_REGION", "MUSEUM_MAX", "MAX_TRIP_DAYS")}}
+            "models": {p: config.MODELS[p] for p in providers}, "model_options": {p: config.MODEL_OPTIONS.get(p, {}) for p in providers}, "weather": "fixed", "detail": "stored",
+            "config": {k: getattr(config, k) for k in ("SEARCH_K", "OVERFETCH", "MAX_LEG_KM_BY_REGION", "MUSEUM_MAX", "MAX_TRIP_DAYS", "RERANK_BATCH")}}
     (out_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = {}
     for provider in providers:

@@ -18,7 +18,7 @@ def load_scorer(model_name: str):
     model = CrossEncoder(model_name, device=device)
 
     def score(pairs: list) -> list:
-        return [float(s) for s in model.predict(pairs, batch_size=16, show_progress_bar=False)]
+        return [float(s) for s in model.predict(pairs, batch_size=config.RERANK_BATCH, show_progress_bar=False)]
 
     return score
 
