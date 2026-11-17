@@ -36,7 +36,7 @@ EDIT_SYSTEM = """당신은 이미 짠 국내 여행 코스를 사용자의 수�
 # 교안: 3일차 05 checkpointer — 같은 thread 의 State 가 다음 호출에 그대로 이어진다.
 RESET_NEW = {"retries": {}, "violations": [], "removed": [], "course": {}, "course_error": "", "search_error": "", "candidates": [],
              "enough": False, "grade": {}, "weather": {}, "festivals": {}, "rest_table": {}, "answer": {}, "request": {},
-             "edit_note": "", "edit_error": "", "add_terms": [], "add_places": [], "added": []}
+             "edit_note": "", "edit_error": "", "add_terms": [], "add_places": [], "added": [], "query": ""}   # query: 지난 질문의 검색 질의가 새 질문에 남던 버그(2026-11-17)
 RESET_EDIT = {"retries": {}, "violations": [], "removed": [], "course_error": "", "edit_note": "", "edit_error": "",
               "add_terms": [], "add_places": [], "added": []}
 

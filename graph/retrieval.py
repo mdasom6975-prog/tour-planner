@@ -128,6 +128,9 @@ def grade_update(llm, trace: Trace):
             # 왜: 후보 소개글은 외부 문서라 태그로 감싸 지시로 읽히지 않게 한다. 어디: LLM 에 보내는 후보 목록.
             # 교안: PRD 11번 간접 인젝션 — <후보 장소> 태그. 후보 밖 id 는 아래에서 코드가 버린다.
             conditions = {k: req.get(k) for k in ("region", "place", "companions", "preferences", "exclusions")}
+            # 왜: 음식 취향("빵 맛집")이 가볼 곳을 모두 탈락시키지 않게, 가볼 곳 조건에서는 음식 낱말이 든 취향을 뺀다. 어디: 가볼 곳 조건.
+            # 교안: 직접 대응 없음(2026-11-17 결정). 음식 취향은 식당 칸을 고르는 코스 작성이 쓴다.
+            conditions["preferences"] = [p for p in (req.get("preferences") or []) if not any(w in p for w in config.FOOD_PREF_WORDS)]
             # 왜: 취향을 한 묶음으로 주면 판정이 "커피 · 박물관" 취향으로 식당까지 걸러 음식점이 0 ~ 2곳만 남았다(7-5 · dev c02). 음식점에는 취향을 아예 보내지 않는다. 어디: 판정 입력.
             # 교안: 직접 대응 없음(2026-11-16 결정: 식당은 제외 조건으로만 거른다. 좋아하는 음식은 코스 작성이 먼저 고른다).
             food_conditions = {k: req.get(k) for k in ("region", "place", "companions", "exclusions")}

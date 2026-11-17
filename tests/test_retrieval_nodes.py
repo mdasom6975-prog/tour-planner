@@ -223,3 +223,18 @@ def test_박물관_취향이면_통과한_실내_후보를_가볼_곳으로_센�
 def test_판정_지시문은_음식점을_관광_취향으로_거르지_않게_한다():
     from graph.retrieval import GRADE_SYSTEM
     assert "음식점 조건에는 취향이 없습니다" in GRADE_SYSTEM
+
+
+def test_음식_취향은_가볼_곳_판정_조건에서_빼고_다른_취향은_남긴다():
+    # 왜: "빵 맛집" 취향이 가볼 곳을 모두 탈락시켜 0곳 포기가 났다(2026-11-17). 음식 낱말이 든 취향만 뺀다. 어디: grade 입력.
+    h = Harness()
+    run(h, preferences=["빵 맛집", "바다 산책", "카페 투어"])
+    grade_call = [u for n, u in h.llm_calls if n == "Grade"][0]
+    sight_line = grade_call.split("음식점 조건:")[0]
+    assert "바다 산책" in sight_line and "빵 맛집" not in sight_line and "카페 투어" not in sight_line
+
+
+def test_새_요청이면_지난_질문의_검색_질의를_비운다():
+    # 왜: 같은 대화에서 새 질문을 하면 지난 질문의 질의("강릉 온천…")로 첫 검색을 하던 버그. 어디: RESET_NEW.
+    from graph.edit import RESET_NEW, RESET_EDIT
+    assert RESET_NEW["query"] == "" and "query" not in RESET_EDIT
