@@ -30,7 +30,7 @@ DRAFT_SYSTEM = """당신은 국내 여행 코스 플래너입니다.
 - 같은 장소를 두 번 쓰지 않습니다. 하루 안에서는 가까운 곳끼리 이어 동선이 짧게 합니다.
 - 후보 줄에 [구역 A] 같은 표시가 있으면 하루의 장소(가볼 곳 · 음식점 · 카페)는 한 구역 안에서 고릅니다. 그 구역에 맞는 곳이 모자랄 때만 "구역 사이 거리"에서 가장 가까운 구역의 장소로 채웁니다.
 - 휴무 표에 그 날짜가 휴무로 적힌 장소는 그 날 넣지 않습니다. '확인 필요'로 적힌 장소는 쓸 수 있습니다.
-- 비 · 눈이 오는 날은 실내 위주로 짜고, 그 이유를 rain_reason 에 한 줄로 적습니다. 그런 날이 없으면 빈 문자열입니다.
+- 비 · 눈이 오는 날은 실내 위주로 짜고, 그 이유를 rain_reason 에 한 줄로 적습니다. 그런 날이 없으면 빈 문자열입니다. 다만 날짜 줄에 "야외를 원함"이라 적힌 날은 사용자가 원한 바다 · 산 같은 야외 장소를 날씨와 상관없이 넣고 실내로 바꾸지 않으며, rain_reason 은 빈 문자열입니다.
 - 날씨 숫자는 주어진 값만 옮겨 적고, 새로 계산하지 않습니다.
 """ + REASON_RULE + """
 - 부가 코스(backup)는 <부가 코스 후보> 와 <카페 후보> 에서 2~3곳을 골라, 비나 눈이 올 때 가볼 만한 이유를 적습니다. 본 코스에 쓴 장소와 cafes 에 고른 카페는 고르지 않고, 공연장 · 문화센터 · 도서관 · 카페 같은 서로 다른 종류를 섞습니다.
@@ -48,7 +48,7 @@ def _view(c: dict, zone: str | None = None) -> str:
     return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum}{theme}{where} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
 
 
-def _day_lines(dates: list, weather: dict) -> list:
+def _day_lines(dates: list, weather: dict, outdoor: bool = False) -> list:
     by_date = {d["date"]: d for d in weather.get("days", [])}
     lines = []
     for day in dates:
@@ -56,7 +56,10 @@ def _day_lines(dates: list, weather: dict) -> list:
         if not w or not w.get("available"):
             lines.append(f"{day} {_label(day)} | 날씨 정보 없음")
         else:
-            kind = "비 예보 — 실내 위주" if w.get("rainy") else "눈 예보 — 실내 위주" if w.get("snowy") else "맑거나 흐림"
+            # 왜: 사용자가 바다 · 산 같은 야외를 원했는데도 비 · 눈 날은 항상 실내만 나왔다(2026-11-17 사용자 요청). 야외 요청(outdoor, 조건 이해가 읽음)이면 실내 위주 표시를 바꿔 야외를 그대로 넣게 한다. 어디: 날씨 줄.
+            # 교안: PRD F3 "비 예보인 날은 실내 위주"의 예외. 부가 코스(실내)는 그대로 붙인다.
+            how = "야외를 원함 — 원한 야외 장소를 그대로 넣음" if outdoor else "실내 위주"
+            kind = f"비 예보 — {how}" if w.get("rainy") else f"눈 예보 — {how}" if w.get("snowy") else "맑거나 흐림"
             lines.append(f"{day} {_label(day)} | 강수확률 {w['rain_prob']}% | {kind}")
     return lines
 
@@ -132,7 +135,7 @@ def draft_update(llm, trace):
         zones, between = zone_labels(cands, len(dates) or req.get("days") or 1, limit)
         zone_line = ("\n구역 사이 거리(직선): " + ", ".join(f"{a}–{b} 약 {km}km" for a, b, km in between) + f". 연속한 두 장소는 {limit}km 를 넘으면 안 됩니다.") if zones else ""
         _v = lambda c: _view(c, zones.get(c["id"]))
-        user = (f"조건: {conditions}\n하루 칸: {' · '.join(slots_for(req, cands))}{zone_line}\n여행일:\n" + "\n".join(_day_lines(dates, state.get("weather", {})))
+        user = (f"조건: {conditions}\n하루 칸: {' · '.join(slots_for(req, cands))}{zone_line}\n여행일:\n" + "\n".join(_day_lines(dates, state.get("weather", {}), bool(req.get("outdoor"))))
                 + "\n휴무 표:\n" + ("\n".join(_rest_lines(state.get("rest_table", {}), titles)) or "없음")
                 + "\n<후보 장소>\n[가볼 곳]\n" + "\n".join(_v(c) for c in sights)
                 + "\n[음식점]\n" + "\n".join(_v(c) for c in foods) + "\n</후보 장소>"
@@ -299,6 +302,11 @@ def respond_update(state) -> dict:
         lines.append("- 이 조건에서 실내 후보를 찾지 못했습니다.")
     if weather.get("notice"):
         notices.append(weather["notice"])
+    # 왜: 야외를 원해서 비 · 눈 예보 날에도 야외를 넣었으면 그 사실과 대비책을 코드가 알린다(문장은 모델이 아니라 코드가). 어디: 안내 문구.
+    # 교안: 직접 대응 없음(2026-11-17 결정).
+    wet = [_label(d["date"]) for d in weather.get("days", []) if d.get("indoor")]
+    if req.get("outdoor") and wet:
+        notices.append(f"{', '.join(wet)}은(는) 비·눈 예보가 있지만 요청하신 야외 코스를 넣었습니다. 우산 · 방수 준비를 권하고, 날씨가 나쁘면 부가 코스(실내)를 참고하세요.")
     fest = state.get("festivals") or {}
     if fest.get("items"):
         notices.append("이 기간 축제: " + ", ".join(f"{f['title']}({f['event_start']}~{f['event_end']})" for f in fest["items"]))

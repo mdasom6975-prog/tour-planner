@@ -145,3 +145,17 @@ def test_예약_예매는_취향이_아니라_못_하는_요청으로_옮긴다(
     req = _check({"region": "부산", "days": 2, "start_date": "2026-11-21", "preferences": ["바다", "KTX 예매"], "cannot_do": ["숙소 예약"]}, "2026-11-16")
     assert req["preferences"] == ["바다"] and req["cannot_do"] == ["숙소 예약", "KTX 예매"] and not req["missing"]
     assert _check({"region": "부산", "days": 2, "start_date": "2026-11-21"}, "2026-11-16")["cannot_do"] == []
+
+
+def test_야외를_원한다고_읽으면_조건에_남고_말하지_않으면_거짓이다():
+    # 왜: 비 · 눈 예보 날에도 야외를 넣을지 가르는 값이다(2026-11-17). 어디: 조건 검사 결과.
+    _, out, _ = run(fake(region="강릉", days=2, start_date="2026-11-21", preferences=["바다 산책"], outdoor=True))
+    assert out["request"]["outdoor"] is True
+    _, out, _ = run(fake(region="강릉", days=2, start_date="2026-11-21", preferences=["박물관"]))
+    assert out["request"]["outdoor"] is False
+
+
+def test_조건_이해_지시문은_야외를_분명히_말했을_때만_true로_하게_한다():
+    llm = fake(region="강릉", days=2, start_date="2026-11-21")
+    run(llm)
+    assert "outdoor" in llm.calls[0][0] and "분명히 말했을 때만" in llm.calls[0][0]
