@@ -99,6 +99,8 @@ def _check(raw: dict, today: str, failed: bool = False) -> dict:
                 req["notes"].append("start_date_past")
             else:
                 req["start_date"] = d.isoformat()
+                if (d - date.fromisoformat(today)).days > config.MAX_AHEAD_DAYS:   # 먼 날짜도 받되 respond 가 읽은 날짜를 알린다(2026-11-16 결정)
+                    req["notes"].append("start_date_far")
         except ValueError:
             req["notes"].append("start_date_invalid")
     if not req["start_date"]:

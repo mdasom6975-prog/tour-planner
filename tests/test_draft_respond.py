@@ -166,3 +166,11 @@ def test_박물관을_요청하면_한_곳만_넣었다고_알린다():
     asked = respond_update(state(course=course(), request={**state()["request"], "preferences": ["미술관 위주"]}))["answer"]
     plain = respond_update(state(course=course()))["answer"]
     assert any("1곳만 넣고" in n for n in asked["notices"]) and not any("1곳만 넣고" in n for n in plain["notices"])
+
+
+def test_먼_날짜와_카페_칸을_못_넣은_것을_알린다():
+    req = {**state()["request"], "notes": ["start_date_far"], "preferences": ["커피"]}
+    ans = respond_update(state(course=course(), request=req))["answer"]
+    assert any("먼 날짜" in n and "다른 날짜라면" in n for n in ans["notices"])
+    assert "카페 후보가 부족해 코스에 카페 칸을 넣지 못했습니다." in ans["notices"]
+    assert not any("먼 날짜" in n or "카페 칸" in n for n in respond_update(state(course=course()))["answer"]["notices"])

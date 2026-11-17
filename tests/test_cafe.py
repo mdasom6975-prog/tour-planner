@@ -88,3 +88,29 @@ def test_후보에_박물관류는_정해진_수까지만_남는다():
     out = retrieve_update(search)({"request": {"region": "강릉"}})
     ids = [c["id"] for c in out["candidates"]]
     assert sum(i.startswith("mu") for i in ids) == config.MUSEUM_CANDIDATES and sum(i.startswith("v") for i in ids) == 3
+
+
+# --- 카페 칸 (2026-11-16 결정: 커피 · 디저트 취향이면 하루에 카페 칸 하나) ---
+def test_커피_취향이고_카페_후보가_일수만큼_있어야_카페_칸이_생긴다():
+    from graph.state import slots_for, wants_cafe
+    cafes = [{"id": f"c{n}", "kind": "cafe"} for n in range(2)]
+    assert wants_cafe({"preferences": ["커피 좋아함"]}) and not wants_cafe({"preferences": ["바다"]}) and not wants_cafe({})
+    assert slots_for({"preferences": ["디저트"], "days": 2}, cafes) == config.COURSE_SLOTS_WITH_CAFE
+    assert slots_for({"preferences": ["디저트"], "days": 3}, cafes) == config.COURSE_SLOTS      # 카페 후보가 모자라면 늘리지 않는다
+    assert slots_for({"preferences": ["바다"], "days": 1}, cafes) == config.COURSE_SLOTS        # 취향이 없으면 네 칸 그대로
+
+
+def test_카페_칸은_카페만_받고_칸이_빠지면_위반이다():
+    from graph.validate import find_violations
+    cands = {c["id"]: c for c in [place("s0", "sight", "관광지"), place("s1", "sight", "관광지"), place("f0", "food", "음식점", is_cafe=False),
+                                  place("f1", "food", "음식점", is_cafe=False), place("c0", "cafe", "음식점", is_cafe=True)]}
+
+    def course(names, ids):
+        return {"days": [{"date": "2026-11-21", "slots": [{"slot": n, "content_id": i, "reason": "r"} for n, i in zip(names, ids)]}]}
+
+    def rules(c, slots=config.COURSE_SLOTS_WITH_CAFE):
+        return [v["rule"] for v in find_violations(c, cands, ["2026-11-21"], {}, "강릉", slots)]
+    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "c0", "s1", "f1"])) == []
+    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "f1", "s1", "f1"]))[0] == "cafe_slot"   # 카페 칸에 식당
+    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "f1"])) == ["slots"]                         # 카페 칸이 빠짐
+    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "f1"]), config.COURSE_SLOTS) == []           # 취향이 없으면 네 칸이 맞다

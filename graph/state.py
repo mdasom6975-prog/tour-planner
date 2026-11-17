@@ -1,5 +1,6 @@
 """그래프 State. 노드가 읽고 쓰는 값을 한곳에 적는다. (PRD 10번, 14번 5단계)"""
 import operator
+import config
 from typing import Annotated, TypedDict
 
 
@@ -32,6 +33,21 @@ class State(TypedDict, total=False):
     # 왜: 노드마다 한 줄씩 덧붙여야 해서 합치는 방식(덧붙이기)을 정한다. 어디: 실행 기록 줄 목록.
     # 교안: 3일차 05 State 의 reducer — 같은 칸에 여러 노드가 쓸 때 어떻게 합칠지 지정한다.
     trace: Annotated[list, operator.add]
+
+
+def wants_cafe(req: dict) -> bool:
+    """취향에 커피 · 디저트 낱말이 있는가. LLM 이 아니라 낱말 비교로 판정한다."""
+    return any(w in p for p in req.get("preferences") or [] for w in config.CAFE_WORDS)
+
+
+def slots_for(req: dict, candidates: list) -> list:
+    """이 요청의 하루 칸. 커피 · 디저트 취향이 있고 카페 후보가 일수만큼 있으면 카페 칸을 더한다."""
+    # 왜: 칸 구성을 코스 작성 · 수정 · 검증이 각자 정하면 어긋난다. 한 곳에서 정해 셋이 같은 값을 쓴다. 어디: draft_course · edit_course · validate_course.
+    # 교안: "숫자와 사실 판정은 코드가". 카페 후보가 모자라면 칸을 늘리지 않고 respond 가 알린다.
+    cafes = sum(1 for c in candidates if c.get("kind") == "cafe")
+    if wants_cafe(req) and cafes >= max(req.get("days") or 1, 1):
+        return config.COURSE_SLOTS_WITH_CAFE
+    return config.COURSE_SLOTS
 
 
 def retries_of(state: State) -> dict:

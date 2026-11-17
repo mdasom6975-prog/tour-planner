@@ -9,7 +9,7 @@ from datetime import date
 
 import config
 from graph.context import _label, trip_dates
-from graph.state import retries_of
+from graph.state import retries_of, slots_for
 from tools.geo import distance_km
 from tools.rest import rest_on
 
@@ -35,17 +35,18 @@ def _recheck(ids: list, stored: dict, detail) -> dict:
     return dict(one(cid) for cid in ids)
 
 
-def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None) -> list:
+def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None = None) -> list:
     """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다."""
     out, seen, museums = [], set(), 0
     limit = config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM)
     days = course.get("days", [])
+    want_slots = slots or config.COURSE_SLOTS   # 커피 · 디저트 취향이면 카페 칸이 하나 더 있다(graph/state.py slots_for)
     if dates and [d["date"] for d in days] != dates:
         out.append(_v("dates", f"여행일은 {', '.join(dates)} 입니다. 코스의 날짜가 다릅니다."))
     for d in days:
         slots = d["slots"]
-        if [s["slot"] for s in slots] != config.COURSE_SLOTS:
-            out.append(_v("slots", f"{_label(d['date'])}은 {'·'.join(config.COURSE_SLOTS)} 네 칸을 순서대로 채워야 합니다.", date=d["date"]))
+        if [s["slot"] for s in slots] != want_slots:
+            out.append(_v("slots", f"{_label(d['date'])}은 {'·'.join(want_slots)} 칸을 순서대로 모두 채워야 합니다.", date=d["date"]))
         prev = None
         for s in slots:
             cid, c = s["content_id"], cands.get(s["content_id"])
@@ -53,7 +54,10 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                 out.append(_v("unknown_place", f"{cid} 은(는) 후보 목록에 없는 장소입니다. 후보에 있는 id 만 쓰세요.", cid, d["date"], s["slot"]))
                 prev = None
                 continue
-            want = config.FOOD_TYPES if s["slot"] in ("점심", "저녁") else config.SIGHT_TYPES
+            if s["slot"] == config.CAFE_SLOT:   # 카페 칸에는 카페(원본 분류 FD05)만. 유형은 음식점이라 아래 유형 검사 대신 여기서 본다
+                if not c.get("is_cafe"):
+                    out.append(_v("cafe_slot", f"카페 칸에는 <카페 후보> 의 카페만 넣을 수 있습니다. {c.get('title')} 은(는) 카페가 아닙니다.", cid, d["date"], s["slot"]))
+            want = config.FOOD_TYPES if s["slot"] in ("점심", "저녁", config.CAFE_SLOT) else config.SIGHT_TYPES
             if c.get("type") not in want:
                 out.append(_v("slot_type", f"{s['slot']} 칸에는 {'/'.join(want)} 유형만 넣을 수 있습니다. {c.get('title')}({c.get('type')}) 은(는) 맞지 않습니다.", cid, d["date"], s["slot"]))
             if s["slot"] in ("점심", "저녁") and c.get("is_cafe"):   # 카페는 식사 자리가 아니라 "근처 카페 추천"으로 따로 둔다
@@ -94,7 +98,7 @@ def validate_update(stored: dict | None, detail, trace):
         need = list(dict.fromkeys(need))
         if need:
             rechecked.update(_recheck(need, stored, detail))
-        violations = find_violations(course, cands, dates, rechecked, req.get("region"))
+        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())))
 
         # 왜: 휴무 표(5-4)는 저장분 기준이었다. 다시 받은 값으로 코스 장소의 칸을 덮어 써서 다시 쓸 때와 화면 표시가 같은 값을 보게 한다. 어디: rest_table.
         table = {k: dict(v) for k, v in (state.get("rest_table") or {}).items()}

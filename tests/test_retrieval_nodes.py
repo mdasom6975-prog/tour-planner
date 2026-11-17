@@ -206,6 +206,20 @@ def test_박물관류는_한_곳만_가볼_곳_수에_센다():
     assert path[-1] == "abstain" and out["answer"]["grade"]["have"]["sight"] == 1
 
 
+def test_박물관_취향이면_통과한_실내_후보를_가볼_곳으로_센다():
+    # 왜: 박물관 취향 요청은 가볼 곳 검색에 박물관만 잡혀 포기로 끝나곤 했다(dev e07). 실내 후보가 칸을 채운다. 박물관류 실내 후보는 올리지 않는다.
+    def search(types):
+        if types == config.INDOOR_TYPES:
+            return {"ok": True, "results": [item("공연장1", "문화시설"), item("공연장2", "문화시설"), item("전시관9", "문화시설", category="VE07")]}
+        return {"ok": True, "results": [item(f"{types[0]}{n}", types[0], category="VE07" if types[0] == "관광지" else "FD01") for n in range(2)]}
+    path, out, _ = run(Harness(search=search), preferences=["박물관"])
+    kinds = {c["id"]: c["kind"] for c in out["candidates"]}
+    assert "abstain" not in path and out["grade"]["have"]["sight"] == 3   # 박물관 1 + 공연장 2
+    assert kinds["공연장1"] == "sight" and kinds["전시관9"] == "indoor"
+    path, out, _ = run(Harness(search=search))   # 취향이 없으면 그대로: 박물관 1곳만 세어 포기
+    assert path[-1] == "abstain"
+
+
 def test_판정_지시문은_음식점을_관광_취향으로_거르지_않게_한다():
     from graph.retrieval import GRADE_SYSTEM
-    assert "food 인 후보(음식점)는 관광 취향" in GRADE_SYSTEM
+    assert "음식점 조건에는 취향이 없습니다" in GRADE_SYSTEM

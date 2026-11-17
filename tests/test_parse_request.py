@@ -129,3 +129,11 @@ def test_되물은_뒤라도_조건을_모두_새로_말하면_새_요청이다(
     from graph.parse import _merge
     new = dict(region="부산", days=1, start_date="2026-11-21", preferences=[])
     assert _merge(new, {"region": "제주", "days": 3, "preferences": ["바다"]}) == new
+
+
+def test_먼_날짜는_받되_사유를_남긴다():
+    # 왜: "11월 10일"을 모델이 1년 뒤로 읽어도 코스는 짜고, respond 가 읽은 날짜를 알린다(2026-11-16 결정).
+    _, far, _ = run(fake(region="부산", days=2, start_date="2027-11-10"))
+    _, near, _ = run(fake(region="부산", days=2, start_date="2026-11-21"))
+    assert far["request"]["start_date"] == "2027-11-10" and far["request"]["notes"] == ["start_date_far"] and far["request"]["missing"] == []
+    assert near["request"]["notes"] == []
