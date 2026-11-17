@@ -1,10 +1,11 @@
-"""매일 한 번 실행하는 수집 명령 일곱 개를 순서대로 돌리고 결과를 한 화면에 모아 보여 준다.
+"""매일 한 번 실행하는 수집 명령 여덟 개를 순서대로 돌리고 결과를 한 화면에 모아 보여 준다.
 
 새 기능은 없다. 이미 있는 함수를 순서대로 부를 뿐이다.
 실행:  python scripts/daily_collect.py
 """
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from harness.logs import get_logger, setup_logging
 from ingest.apply_sync import apply_sync
 from ingest.clean import build_places
 from ingest.collect_detail import collect_detail
+from ingest.collect_kakao_ids import collect as collect_kakao_ids
 from ingest.collect_festivals import collect_active_festivals
 from ingest.collect_sync import RAW_DIR, collect_sync
 from ingest.plan_access import OUT_PATH as ACCESS_QUEUE, build_access_queue
@@ -84,8 +86,11 @@ def main():
     for label, op in (("3. 소개글", "detailCommon2"), ("4. 휴무일 · 이용시간", "detailIntro2"), ("5. 무장애 정보", "detailWithTour2")):
         detail[op] = step(f"{label} ({op})", lambda op=op: collect_detail(op))
     places = step("6. 정제", build_places)
+    # 왜: 새로 늘어난 음식점에만 카카오 장소 ID 를 붙인다(이미 처리한 곳은 건너뜀). 정제 결과를 읽으므로 정제 뒤에 둔다. 어디: 정제 바로 다음.
+    # 교안: 직접 대응 없음. 4일차 PRD "결과 캐시" — 처리한 것은 다시 부르지 않는다.
+    kakao = step("7. 카카오 장소 ID (새 음식점만)", lambda: collect_kakao_ids(key=os.getenv("KAKAO_REST_KEY")))
 
-    # 왜: 일곱 단계의 결과를 따로 읽지 않고 "오늘 얼마나 받았고 며칠 남았는지" 를 한눈에 본다. 어디: 마지막 요약.
+    # 왜: 여덟 단계의 결과를 따로 읽지 않고 "오늘 얼마나 받았고 며칠 남았는지" 를 한눈에 본다. 어디: 마지막 요약.
     # 교안: 2일차 Part3 비교표 — 숫자를 한 표에 모아야 판단할 수 있다.
     usage = json.loads(USAGE_PATH.read_text(encoding="utf-8")) if USAGE_PATH.exists() else {}
     remaining = usage.get("server_remaining", {})
@@ -113,6 +118,8 @@ def main():
     if places.get("ok"):
         print(f"  정제된 장소       {places['count']}곳  {places['by_type']}")
         print(f"    ↳ 그중 비표출 {places['hidden']}곳은 검색에서 빠짐 · 표출 여부 모름 {places['showflag_unknown']}곳")
+    if kakao.get("ok"):
+        print(f"  카카오 장소 ID    찾음 {kakao['found']} · 못 찾음 {kakao['no_match']} · 이미 처리 {kakao['skipped']}  ({kakao['stopped']})")
     print(f"  수집 마감         2026-11-20 (PRD 4번)")
     if failed:
         print(f"\n실패한 단계: {failed}")
