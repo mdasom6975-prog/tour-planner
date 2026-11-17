@@ -89,3 +89,15 @@ def test_합계는_위반_수와_느린_문항과_단계_시간을_센다():
     s = score_rows([row(), row(turn(("s1", "f1", "far", "f2")), took=45.0), row(turn(kind="ask_back"), {"kind": "ask_back"}, took=2.0)], PLACES)
     assert (s["count"], s["expect_ok"], s["courses"], s["rule_total"], s["slow"]) == (3, 3, 2, 2, 1)
     assert s["rule_violations"]["distance"] == 2 and s["step_ms_avg"] == {"draft_course": 1000} and s["course_sec_max"] == 45.0
+
+
+def test_있어야_하는_칸이_없으면_알린다():
+    assert expect_failures(row(expect={"kind": "course", "slots_has": ["카페"]}), PLACES) == ["코스에 없는 칸: 카페"]
+    assert expect_failures(row(expect={"kind": "course", "slots_has": ["오전"]}), PLACES) == []
+
+
+def test_맞는_답이_둘인_문항은_한쪽만_맞아도_통과다():
+    exp = {"kind": "ask_back", "missing": ["start_date"], "alt": {"kind": "course", "notice_has": "먼 날짜"}}
+    assert expect_failures(row(turn(kind="ask_back", missing=["start_date"]), exp), PLACES) == []
+    assert expect_failures(row(turn(notices=["먼 날짜입니다"]), exp), PLACES) == []
+    assert expect_failures(row(turn(), exp), PLACES) == ["답 종류 course (기대 ask_back)"]

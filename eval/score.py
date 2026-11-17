@@ -78,6 +78,9 @@ def rule_violations(turn: dict, places: dict) -> list:
 def expect_failures(row: dict, places: dict) -> list:
     """기대값과 다른 점을 글로 돌려준다. 빈 목록이면 통과."""
     exp, turns = row["expect"], row["turns"]
+    if "alt" in exp:   # 모델이 읽는 방식에 따라 맞는 답이 둘인 문항(b05): 어느 한쪽 기대에 맞으면 통과
+        first = expect_failures({**row, "expect": {k: v for k, v in exp.items() if k != "alt"}}, places)
+        return first if not first or expect_failures({**row, "expect": exp["alt"]}, places) else []
     if row.get("error") or not turns:
         return [f'실행 오류: {row.get("error") or "턴 없음"}']
     last, req, bad = turns[-1], turns[-1].get("request") or {}, []
@@ -105,6 +108,8 @@ def expect_failures(row: dict, places: dict) -> list:
     # 왜: "요청하신 ○○식당은 후보에 없어 대신 골랐습니다"처럼 없는 장소를 사실대로 말하는 것은 잘한 것이다. 장소 이름 칸만 본다(2026-11-16 a02 실행에서 확인). 어디: 없는 장소 강요 문항.
     # 교안: 직접 대응 없음.
     bad += [f"코스에 있으면 안 됨: {w}" for w in exp.get("title_not", []) if any(w in t for t in titles)]
+    used = {s["slot"] for d in last.get("course", []) for s in d["slots"]}
+    bad += [f"코스에 없는 칸: {w}" for w in exp.get("slots_has", []) if w not in used]
     if "mode" in exp and last.get("mode") != exp["mode"]:
         bad.append(f'경로 {last.get("mode")} (기대 {exp["mode"]})')
     if exp.get("changed") and len(turns) >= 2:
