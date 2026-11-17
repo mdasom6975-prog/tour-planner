@@ -268,3 +268,27 @@ def test_판정이_통과시켜도_제외_조건_낱말이_있는_후보는_뺀�
     assert "횟집" not in {c["id"] for c in out["candidates"]}
     _, out, _ = run(Harness(search=search))
     assert "횟집" in {c["id"] for c in out["candidates"]}
+
+
+def test_음식_취향은_식당과_카페_검색에만_보내고_가볼_곳과_실내_검색에서는_뺀다():
+    # 왜: "강릉 빵 맛집"을 네 종류 검색에 모두 보내 순두부마을 · 커피거리가 가볼 곳을 채웠다(2026-11-17 측정). 어디: retrieve 첫 질의.
+    h = Harness()
+    run(h, preferences=["빵 맛집", "바다 산책"])
+    by_types = {tuple(s["types"]): s["query"] for s in h.searches}
+    assert by_types[tuple(config.FOOD_TYPES)] == "강릉 빵 맛집 바다 산책"
+    assert by_types[tuple(config.SIGHT_TYPES)] == "강릉 바다 산책"
+    assert by_types[tuple(config.INDOOR_TYPES)] == "강릉 바다 산책"
+
+
+def test_취향이_모두_음식이면_가볼_곳은_지역_이름만으로_찾는다():
+    h = Harness()
+    run(h, preferences=["빵 맛집"])
+    sight = [s["query"] for s in h.searches if s["types"] == config.SIGHT_TYPES]
+    assert sight == ["강릉"]
+
+
+def test_질의를_고쳐_쓴_재시도에서는_모든_종류가_고친_질의를_쓴다():
+    h = Harness(grades=[lambda i: False, None])   # 첫 판정은 모두 탈락 → 질의를 고쳐 다시 찾는다
+    run(h, preferences=["빵 맛집"])
+    queries = [s["query"] for s in h.searches]
+    assert queries[3:6] == [h.new_query] * 3   # 두 번째 검색(가볼 곳 · 음식점 · 실내)

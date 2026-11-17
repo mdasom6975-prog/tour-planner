@@ -40,10 +40,13 @@ def _clean(text: str) -> str:
     return TAG.sub("", str(text)).strip()
 
 
-def build_query(req: dict) -> str:
+def build_query(req: dict, food: bool = True) -> str:
     # 왜: 첫 질의는 LLM 없이 조건에서 코드가 만든다. 제외 조건은 넣지 않는다(검색이 그 낱말을 오히려 찾는다). 어디: retrieve 첫 호출.
     # 교안: RAG 실습2 transform_query 의 "원 질문" 자리. 직접 대응 없음(조건 JSON → 질의 문장은 이 프로젝트에서 추가).
-    return " ".join([req.get("place") or req.get("region") or ""] + list(req.get("preferences", []))).strip()
+    prefs = list(req.get("preferences", []))
+    if not food:   # 가볼 곳 · 실내용 질의: 음식 낱말 취향("빵 맛집")을 뺀다(2026-11-17 강릉 측정: 순두부마을 · 커피거리가 가볼 곳으로 잡혔다)
+        prefs = [p for p in prefs if not any(w in p for w in config.FOOD_PREF_WORDS)]
+    return " ".join([req.get("place") or req.get("region") or ""] + prefs).strip()
 
 
 def _area_for(req: dict, areas: dict | None):
@@ -67,11 +70,14 @@ def retrieve_update(search, areas: dict | None = None):
     def update(state) -> dict:
         req = state.get("request", {})
         query = state.get("query") or build_query(req)
+        # 왜: 같은 질의("강릉 빵 맛집")를 가볼 곳 검색에도 보내 순두부마을 · 커피거리 같은 먹거리 장소가 가볼 곳을 채웠다. 첫 질의는 종류별로 나누고, 고쳐 쓴 질의(재시도)는 예전처럼 모두에 쓴다. 어디: 종류별 검색.
+        # 교안: 직접 대응 없음(2026-11-17 결정).
+        sight_query = query if state.get("query") else build_query(req, food=False)
         area, notes = _area_for(req, areas)
         found = {c["id"]: c for c in state.get("candidates", [])}   # 앞선 판정을 통과한 후보는 유지한다
         error = None
         for kind, types in SEARCH_KINDS.items():
-            got = search(query, region=req.get("region"), types=types, area=area)
+            got = search(query if kind == "food" else sight_query, region=req.get("region"), types=types, area=area)
             if not got.get("ok"):
                 error = got.get("reason", "검색 실패")
                 continue
@@ -92,7 +98,7 @@ def retrieve_update(search, areas: dict | None = None):
         need = max(req.get("days") or 1, 1) * config.PLACES_PER_DAY
         plain = sum(1 for c in found.values() if c["kind"] == "sight" and c.get("category") != config.MUSEUM_CLASS)
         base_query = req.get("place") or req.get("region")
-        if plain < need and base_query and base_query != query:
+        if plain < need and base_query and base_query != sight_query:
             got = search(base_query, region=req.get("region"), types=KINDS["sight"], area=area)
             for item in got["results"] if got.get("ok") else []:
                 found.setdefault(item["id"], {**item, "kind": "sight"})
