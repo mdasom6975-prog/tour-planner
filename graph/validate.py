@@ -4,6 +4,7 @@
 최종 코스에 들어간 장소만 관광공사에서 다시 받아 그 값으로 휴무를 판정하고, 한 장소는 한 번만 받는다(재작성해도 다시 받지 않는다).
 축제는 코스 칸에 넣지 않으므로(5-5) 기간 검사는 해당 없다.
 """
+import itertools
 import time
 from datetime import date
 
@@ -83,6 +84,46 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
     return out
 
 
+def _legs(slots: list, cands: dict):
+    """연속한 칸 사이 직선거리의 (합, 가장 긴 구간). 좌표를 못 구하면 None."""
+    total, longest, prev = 0.0, 0.0, None
+    for s in slots:
+        c = cands.get(s["content_id"])
+        if c is None:
+            return None
+        if prev is not None:
+            got = distance_km(prev, c)
+            if not got["ok"]:
+                return None
+            total, longest = total + got["km"], max(longest, got["km"])
+        prev = c
+    return total, longest
+
+
+def reorder_day(slots: list, cands: dict, limit: float):
+    """같은 종류 칸(오전↔오후, 점심↔저녁)을 맞바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
+    # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 어디: validate_course 끝.
+    # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있으면 그 쌍은 두지 않는다. 구간 상한은 넘기지 않는다.
+    names = [s["slot"] for s in slots]
+    pairs = [(a, b) for a, b in (("오전", "오후"), ("점심", "저녁")) if a in names and b in names
+             and not any(w in slots[names.index(n)]["reason"] for n in (a, b) for w in config.REORDER_TIME_WORDS)]
+    base = _legs(slots, cands)
+    if not pairs or base is None:
+        return slots, False
+    best, best_slots = base, slots
+    for flags in itertools.product((False, True), repeat=len(pairs)):
+        trial = [dict(s) for s in slots]
+        for (a, b), on in zip(pairs, flags):
+            if on:
+                i, j = names.index(a), names.index(b)
+                for key in ("content_id", "reason"):
+                    trial[i][key], trial[j][key] = trial[j][key], trial[i][key]
+        got = _legs(trial, cands)
+        if got and got[0] < best[0] - config.REORDER_MIN_GAIN_KM and got[1] <= max(limit, base[1]):
+            best, best_slots = got, trial
+    return best_slots, best_slots is not slots
+
+
 def validate_update(stored: dict | None, detail, trace):
     stored = stored or {}
 
@@ -114,6 +155,17 @@ def validate_update(stored: dict | None, detail, trace):
             bad = {(v["date"], v["slot"]) for v in violations if v["slot"]}
             out["course"] = {**course, "days": [{**d, "slots": [s for s in d["slots"] if (d["date"], s["slot"]) not in bad]} for d in course["days"]]}
             out["removed"] = [v for v in violations if v["slot"]]
+        # 왜: 최종 코스(위반이 없거나 재작성을 다 쓴 뒤)만 칸 순서를 맞바꿔 이동 거리를 줄인다. State 의 코스를 바꿔야 후속 수정이 화면과 같은 순서를 본다. 어디: 위반 처리 직후.
+        # 교안: 직접 대응 없음(2026-11-17 결정).
+        if not violations or exhausted:
+            final, limit, moved, days_new = out.get("course", course), config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM), [], []
+            for d in final.get("days", []):
+                slots_new, changed = reorder_day(d["slots"], cands, limit)
+                days_new.append({**d, "slots": slots_new})
+                if changed:
+                    moved.append(d["date"])
+            if final.get("days"):
+                out["course"] = {**{k: v for k, v in final.items() if k != "reordered"}, "days": days_new, **({"reordered": moved} if moved else {})}
         trace.record("validate_course.check", "tool", input={"rechecked_new": len(need), "draft": retries_of(state)["draft"]},
                      output={"violations": [v["rule"] for v in violations], "removed": len(out.get("removed", []))}, ok=not violations,
                      took_ms=round((time.perf_counter() - t0) * 1000, 2))

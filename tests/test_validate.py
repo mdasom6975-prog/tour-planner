@@ -208,3 +208,53 @@ def test_다시_받기는_한_스레드에서_차례로_한다():
     h.detail = lambda cid: (seen.add(threading.current_thread().name), orig(cid))[1]   # 호출 한도 기록 파일이 동시 쓰기로 깨지지 않게
     h.run()
     assert seen == {threading.current_thread().name}
+
+
+# --- 같은 종류 칸 맞바꿈 (reorder_day, 2026-11-17) ---
+def _slot(name, cid, reason="좋은 곳입니다."):
+    return {"slot": name, "content_id": cid, "reason": reason}
+
+
+def _cands(**pos):   # 경도(동서)만 달라 거리가 단순하다: 0.01도 ≈ 0.9km, 0.30도 ≈ 26km
+    return {cid: place(cid, "sight", "관광지", lon=128.9 + off) for cid, off in pos.items()}
+
+
+GEO = dict(a=0.00, b=0.30, c=0.31, d=0.01)   # 오전 a(서) → 점심 b(동) → 오후 c(동) → 저녁 d(서): 서-동-서로 두 번 가로지른다
+
+
+def test_맞바꾸면_짧아질_때_같은_종류_칸을_바꾼다():
+    from graph.validate import _legs, reorder_day
+    cands = _cands(**GEO)
+    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]
+    got, changed = reorder_day(slots, cands, 25)
+    assert changed and [s["content_id"] for s in got] == ["a", "d", "c", "b"]   # 점심 ↔ 저녁
+    assert [s["slot"] for s in got] == ["오전", "점심", "오후", "저녁"]   # 칸 이름과 순서는 그대로
+    assert _legs(got, cands)[0] < _legs(slots, cands)[0] - 20
+
+
+def test_이득이_작으면_바꾸지_않는다():
+    from graph.validate import reorder_day
+    cands = _cands(a=0.00, b=0.001, c=0.002, d=0.003)
+    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]
+    got, changed = reorder_day(slots, cands, 25)
+    assert not changed and got is slots
+
+
+def test_이유에_시간_낱말이_있으면_그_쌍은_바꾸지_않는다():
+    from graph.validate import reorder_day
+    slots = [_slot("오전", "a", "오전에 걷기 좋습니다."), _slot("점심", "b", "점심으로 먹기 좋습니다."), _slot("오후", "c"), _slot("저녁", "d")]
+    got, changed = reorder_day(slots, _cands(**GEO), 25)
+    assert not changed and [s["content_id"] for s in got] == ["a", "b", "c", "d"]   # 두 쌍 모두 막힘
+    slots[0]["reason"] = "걷기 좋습니다."   # 오전 쌍만 풀면 오전 ↔ 오후는 바뀐다
+    got, changed = reorder_day(slots, _cands(**GEO), 25)
+    assert changed and [s["content_id"] for s in got] == ["c", "b", "a", "d"]
+
+
+def test_장소와_이유는_함께_움직이고_카페_칸은_제자리다():
+    from graph.validate import reorder_day
+    cands = _cands(**GEO, e=0.15)
+    slots = [_slot("오전", "a", "이유a"), _slot("점심", "b", "이유b"), _slot("카페", "e", "이유e"), _slot("오후", "c", "이유c"), _slot("저녁", "d", "이유d")]
+    got, changed = reorder_day(slots, cands, 25)
+    assert changed and [s["slot"] for s in got] == ["오전", "점심", "카페", "오후", "저녁"]
+    assert next(s for s in got if s["slot"] == "카페")["content_id"] == "e"
+    assert all(s["reason"] == "이유" + s["content_id"] for s in got)   # 이유는 장소를 따라간다

@@ -295,6 +295,8 @@ def respond_update(state) -> dict:
     if "start_date_far" in req.get("notes", []) and req.get("start_date"):
         y, m, d = req["start_date"].split("-")
         notices.append(f"출발일을 {y}년 {int(m)}월 {int(d)}일로 읽었습니다. 오늘부터 {config.MAX_AHEAD_DAYS}일보다 먼 날짜라 날씨 · 축제 · 휴무 정보가 달라질 수 있습니다. 다른 날짜라면 다시 말씀해 주세요.")
+    if course.get("reordered"):   # 코드가 이동 거리를 줄이려고 칸 순서를 맞바꾼 날을 알린다
+        notices.append(f"이동 거리를 줄이려고 {', '.join(_label(d) for d in course['reordered'])}의 방문 순서를 조정했습니다.")
     if state.get("edit_note"):
         notices.append(f"수정 요청 중 반영하지 못한 부분: {state['edit_note']}")
     if state.get("edit_error"):
