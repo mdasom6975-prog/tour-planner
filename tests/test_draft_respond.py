@@ -220,3 +220,11 @@ def test_야외를_원했는데_비_눈_예보가_있으면_코드가_그_사실
     assert any("요청하신 야외 코스를 넣었습니다" in n and "11/21(토)" in n for n in ans["notices"])
     plain = respond_update(state(course=course()))["answer"]
     assert not any("야외 코스를 넣었습니다" in n for n in plain["notices"])
+
+
+def test_가볼_곳이_모자라_칸을_줄였으면_알리고_카페_안내는_그대로다():
+    req = {**state()["request"], "places_per_day": config.MIN_PLACES_PER_DAY, "preferences": ["커피"]}
+    ans = respond_update(state(course=course(), request=req))["answer"]
+    assert "조건에 맞는 가볼 곳이 모자라 하루 가볼 곳을 2곳으로 줄였습니다." in ans["notices"]
+    assert "카페 후보가 부족해 코스에 카페 칸을 넣지 못했습니다." in ans["notices"]   # 칸을 줄여도 카페 칸 판정은 따로 한다
+    assert not any("줄였습니다" in n for n in respond_update(state(course=course()))["answer"]["notices"])

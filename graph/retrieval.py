@@ -186,8 +186,15 @@ def grade_update(llm, trace: Trace):
         extra = sum(1 for c in kept if c["kind"] == "sight" and c.get("category") == config.MUSEUM_CLASS) - config.MUSEUM_MAX
         have["sight"] -= max(extra, 0)
         enough = have["sight"] >= need and have["food"] >= need_food
-        return {"candidates": kept, "enough": enough,
-                "grade": {"have": have, "need": {"sight": need, "food": need_food}, "reason": reason}}
+        # 왜: 가볼 곳이 하루 3곳에는 모자라도 2곳씩은 채울 수 있으면 포기하지 않고 줄여 짠다. 요청에 적어 두어 코스 작성 · 검증 · 수정이 같은 칸을 쓴다. 어디: after_grade · slots_for.
+        # 교안: 직접 대응 없음(2026-11-19 결정). 다시 찾기를 다 쓴 뒤에만 이 길로 간다(graph/build.py after_grade).
+        days = max(req.get("days") or 1, 1)
+        short_ok = not enough and have["sight"] >= days * config.MIN_PLACES_PER_DAY and have["food"] >= need_food
+        new_req = {k: v for k, v in req.items() if k != "places_per_day"}
+        if short_ok:
+            new_req["places_per_day"] = config.MIN_PLACES_PER_DAY
+        return {"candidates": kept, "enough": enough, "request": new_req,
+                "grade": {"have": have, "need": {"sight": need, "food": need_food}, "reason": reason, "short_ok": short_ok}}
     return update
 
 

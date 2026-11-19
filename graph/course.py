@@ -322,8 +322,10 @@ def respond_update(state) -> dict:
         notices.append(f"박물관 · 미술관 · 전시관은 코스에 {config.MUSEUM_MAX}곳만 넣고, 나머지는 다른 볼거리로 채웠습니다.")
     # 왜: 커피 · 디저트 취향을 말했는데 카페 후보가 모자라 칸을 못 늘렸으면 사실대로 알린다. 먼 날짜는 읽은 날짜를 밝혀 잘못 읽었을 때 사용자가 알아채게 한다(2026-11-16 결정). 어디: 안내 문구.
     # 교안: PRD F3 "받지 못한 것은 받지 못했다고 알린다".
-    if wants_cafe(req) and slots_for(req, list(cands.values())) == config.COURSE_SLOTS:
+    if wants_cafe(req) and config.CAFE_SLOT not in slots_for(req, list(cands.values())):
         notices.append("카페 후보가 부족해 코스에 카페 칸을 넣지 못했습니다.")
+    if (req.get("places_per_day") or config.PLACES_PER_DAY) < config.PLACES_PER_DAY:   # 후보가 모자라 칸을 줄였으면 사실대로 알린다
+        notices.append(f"조건에 맞는 가볼 곳이 모자라 하루 가볼 곳을 {req['places_per_day']}곳으로 줄였습니다.")
     if req.get("cannot_do"):
         notices.append(f"{', '.join(req['cannot_do'])}은(는) 이 서비스가 대신 해 드리지 못합니다. 여행 코스만 짰습니다.")
     if "start_date_far" in req.get("notes", []) and req.get("start_date"):

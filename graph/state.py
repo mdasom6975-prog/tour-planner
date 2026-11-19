@@ -90,9 +90,11 @@ def slots_for(req: dict, candidates: list) -> list:
     # 왜: 칸 구성을 코스 작성 · 수정 · 검증이 각자 정하면 어긋난다. 한 곳에서 정해 셋이 같은 값을 쓴다. 어디: draft_course · edit_course · validate_course.
     # 교안: "숫자와 사실 판정은 코드가". 카페 후보가 모자라면 칸을 늘리지 않고 respond 가 알린다.
     cafes = sum(1 for c in candidates if c.get("kind") == "cafe")
-    if wants_cafe(req) and cafes >= max(req.get("days") or 1, 1):
-        return config.COURSE_SLOTS_WITH_CAFE
-    return config.COURSE_SLOTS
+    slots = config.COURSE_SLOTS_WITH_CAFE if wants_cafe(req) and cafes >= max(req.get("days") or 1, 1) else config.COURSE_SLOTS
+    # 가볼 곳 후보가 모자라 grade_documents 가 하루 가볼 곳을 줄였으면 늦은 오후 칸을 뺀다(config.MIN_PLACES_PER_DAY)
+    if (req.get("places_per_day") or config.PLACES_PER_DAY) < config.PLACES_PER_DAY:
+        return [s for s in slots if s != config.LATE_SLOT]
+    return slots
 
 
 def retries_of(state: State) -> dict:

@@ -94,6 +94,22 @@ def test_필요한_수는_일수에_비례한다():
     assert out["answer"]["grade"]["need"] == {"sight": 6, "food": 4}
 
 
+def test_끝까지_부족해도_하루_두_곳씩은_채울_수_있으면_칸을_줄여_짠다():
+    from graph.state import slots_for
+    h = Harness(relevant=lambda i: i != "관광지2")   # 가볼 곳 2곳만 통과: 3곳에는 모자라고 2곳(config.MIN_PLACES_PER_DAY)은 채운다
+    path, out, _ = run(h)
+    assert path.count("transform_query") == config.MAX_SEARCH_RETRIES   # 먼저 다시 찾기를 다 쓴다
+    assert "abstain" not in path and "fetch_context" in path
+    assert out["request"]["places_per_day"] == config.MIN_PLACES_PER_DAY and out["grade"]["short_ok"]
+    assert slots_for(out["request"], out["candidates"]) == ["오전", "점심", "오후", "저녁"]
+
+
+def test_다시_찾아_충분해지면_칸을_줄이지_않는다():
+    h = Harness(grades=[lambda i: i != "관광지2", None])
+    path, out, _ = run(h)
+    assert path.count("transform_query") == 1 and "places_per_day" not in out["request"]
+
+
 def test_후보_목록에_없는_id는_무시한다():
     h = Harness()
     h.llm_orig = h.llm
