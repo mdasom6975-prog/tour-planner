@@ -278,7 +278,7 @@ START
 
 ## 13. 기술 스택 · 폴더 구조
 - Python 3.14(교안 가상환경과 같은 버전) · Streamlit(+지도 컴포넌트) · LangGraph
-- LLM: **Claude가 기본, OpenAI는 비교용.** 모델 이름은 `config.py` 한 곳에 두고 `init_chat_model`로 만든다. `LLM_PROVIDER=claude|openai`로 바꾼다
+- LLM: **코스 생성 기본값은 OpenAI(2026-11-19 사용자 결정, Anthropic API 잔액 소진. 그 전까지는 Claude가 기본), 근거성 채점자는 Claude Haiku 고정.** 모델 이름은 `config.py` 한 곳에 두고 `init_chat_model`로 만든다. `LLM_PROVIDER=claude|openai`로 바꾼다
   - 구조화 출력은 JSON 스키마 방식으로 받는다 (최신 Claude는 특정 도구 강제 호출을 받지 않는다)
   - `temperature`를 넘기지 않는다 (최신 Claude가 받지 않는다)
 - 검색: kiwipiepy + rank_bm25 · sentence-transformers(한국어 임베딩 · reranker) · numpy 전수 비교

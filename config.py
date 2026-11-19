@@ -11,7 +11,9 @@ MODELS = {
     "claude": "anthropic:claude-sonnet-5-5",   # 2026-11-17 사용자 결정: opus-5-5 에서 바꿈
     "openai": "openai:gpt-5.4-mini",
 }
-LLM_PROVIDER = os.getenv("LLM_PROVIDER") or "claude"
+# 왜: Anthropic API 잔액이 떨어져 Claude 호출이 실패한다(2026-11-19 사용자 결정). 코스 생성 기본값만 openai 로 두고 채점자는 그대로다. 어디: make_llm · eval 의 --provider 기본값.
+# 교안: 직접 대응 없음. Claude 로 돌릴 때는 LLM_PROVIDER=claude 를 붙인다.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER") or "openai"
 # 왜: Opus 5.5 · Sonnet 5.5 는 생각(thinking)을 끌 수 없고 effort 로 깊이를 조절한다. 2026-11-17 측정(Sonnet 5.5 코스 작성): low 5 ~ 7초 · medium 6 ~ 13초 · high 17 ~ 27초. 어디: make_llm 이 모델을 만들 때.
 # 교안: 직접 대응 없음. 모델마다 받는 설정 이름이 달라 제공자별로 적는다(지시문 · 검색 결과는 두 모델이 같다).
 MODEL_OPTIONS = {
