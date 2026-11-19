@@ -132,7 +132,7 @@ def test_그래프_끝까지_가면_코스_답이_나온다():
         if schema is Grade:
             return {"relevant_ids": [l.split("|")[0].replace("id=", "").strip() for l in user.splitlines() if l.startswith("id=")], "reason": ""}
         return course(days=[{"date": d, "slots": [{"slot": n, "content_id": i, "reason": "r"} for n, i in zip(config.COURSE_SLOTS, ids)]}
-                            for d, ids in ((D1, ["s0", "f0", "s1", "f1"]), (D2, ["s2", "f2", "s3", "f3"]))])
+                            for d, ids in ((D1, ["s0", "f0", "s1", "m0", "f1"]), (D2, ["s2", "f2", "s3", "m1", "f3"]))])
     weather = lambda lat, lon, dates: {"ok": True, "days": [{"date": d, "available": True, "temp_min": 1, "temp_max": 8, "rain_prob": 10, "snow_cm": 0.0, "note": ""} for d in dates], "source": "t"}
     festivals = lambda region, start, end: {"ok": True, "results": []}
     out = build_graph(Trace(save=False), llm=llm, today="2026-11-13", search=search, weather=weather, festivals=festivals).invoke({"message": "x"})
@@ -220,3 +220,11 @@ def test_야외를_원했는데_비_눈_예보가_있으면_코드가_그_사실
     assert any("요청하신 야외 코스를 넣었습니다" in n and "11/21(토)" in n for n in ans["notices"])
     plain = respond_update(state(course=course()))["answer"]
     assert not any("야외 코스를 넣었습니다" in n for n in plain["notices"])
+
+
+def test_가볼_곳이_모자라_칸을_줄였으면_알리고_카페_안내는_그대로다():
+    req = {**state()["request"], "places_per_day": config.MIN_PLACES_PER_DAY, "preferences": ["커피"]}
+    ans = respond_update(state(course=course(), request=req))["answer"]
+    assert "조건에 맞는 가볼 곳이 모자라 하루 가볼 곳을 2곳으로 줄였습니다." in ans["notices"]
+    assert "카페 후보가 부족해 코스에 카페 칸을 넣지 못했습니다." in ans["notices"]   # 칸을 줄여도 카페 칸 판정은 따로 한다
+    assert not any("줄였습니다" in n for n in respond_update(state(course=course()))["answer"]["notices"])

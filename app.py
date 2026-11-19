@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 from streamlit_folium import st_folium
 
 import config
-from graph.present import (CREDIT, compose_question, known_region, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day,
+from graph.present import (CREDIT, compose_question, known_region, DAY_COLORS, POLICY_URL, excerpt, export_markdown, festival_cards, gallery_html, load_kakao_ids, map_view, place_links, route_by_day, visit_info,
                            rain_note, summary_line, weather_by_date, weather_line)
 from graph.runtime import make_graph, open_checkpointer
 from harness.logs import get_logger, setup_logging
@@ -179,6 +179,8 @@ def draw_slot(slot: dict, place: dict) -> None:
                 facts.insert(0, f"직전 장소에서 직선 약 {slot['leg_km']}km")
             if facts:
                 st.caption(" · ".join(facts))
+            for line in visit_info(place):   # 이용 시간 · 휴무일 (관광공사 원문)
+                st.markdown(f"🕘 {plain(line)}" if line.startswith("이용") else f"🚫 {plain(line)}")
             if slot.get("access"):
                 with st.expander("무장애 정보 (관광공사 원문)"):
                     for name, items in slot["access"]:

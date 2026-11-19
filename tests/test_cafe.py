@@ -15,7 +15,7 @@ def test_점심_저녁에_카페가_들어가면_위반이다():
     c = good()
     by_id = {**BY_ID, "c0": place("c0", "cafe", "음식점", is_cafe=True)}
     c["days"][0]["slots"][1]["content_id"] = "c0"   # 점심
-    c["days"][1]["slots"][3]["content_id"] = "c0"   # 저녁(중복도 걸린다)
+    c["days"][1]["slots"][4]["content_id"] = "c0"   # 저녁(중복도 걸린다)
     rules = [(v["rule"], v["slot"]) for v in find_violations(c, by_id, [D1, D2], {}, "강릉")]
     assert ("cafe_meal", "점심") in rules and ("cafe_meal", "저녁") in rules
 
@@ -23,7 +23,7 @@ def test_점심_저녁에_카페가_들어가면_위반이다():
 def test_음식점_결과를_식당과_카페로_나누고_식당만_센다():
     def search(query, *, region, types, area):
         if types == config.FOOD_TYPES:
-            rows = [{"id": f"f{n}", "title": f"식당{n}", "type": "음식점", "is_cafe": False} for n in range(12)]
+            rows = [{"id": f"f{n}", "title": f"식당{n}", "type": "음식점", "is_cafe": False} for n in range(config.SEARCH_K + 2)]
             rows[1:1] = [{"id": f"c{n}", "title": f"카페{n}", "type": "음식점", "is_cafe": True} for n in range(4)]   # 위쪽에 카페가 섞여 있다
             return {"ok": True, "results": rows}
         return {"ok": True, "results": []}
@@ -102,7 +102,7 @@ def test_커피_취향이고_카페_후보가_일수만큼_있어야_카페_칸�
 
 def test_카페_칸은_카페만_받고_칸이_빠지면_위반이다():
     from graph.validate import find_violations
-    cands = {c["id"]: c for c in [place("s0", "sight", "관광지"), place("s1", "sight", "관광지"), place("f0", "food", "음식점", is_cafe=False),
+    cands = {c["id"]: c for c in [place("s0", "sight", "관광지"), place("s1", "sight", "관광지"), place("s2", "sight", "관광지"), place("f0", "food", "음식점", is_cafe=False),
                                   place("f1", "food", "음식점", is_cafe=False), place("c0", "cafe", "음식점", is_cafe=True)]}
 
     def course(names, ids):
@@ -110,7 +110,7 @@ def test_카페_칸은_카페만_받고_칸이_빠지면_위반이다():
 
     def rules(c, slots=config.COURSE_SLOTS_WITH_CAFE):
         return [v["rule"] for v in find_violations(c, cands, ["2026-11-21"], {}, "강릉", slots)]
-    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "c0", "s1", "f1"])) == []
-    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "f1", "s1", "f1"]))[0] == "cafe_slot"   # 카페 칸에 식당
-    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "f1"])) == ["slots"]                         # 카페 칸이 빠짐
-    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "f1"]), config.COURSE_SLOTS) == []           # 취향이 없으면 네 칸이 맞다
+    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "c0", "s1", "s2", "f1"])) == []
+    assert rules(course(config.COURSE_SLOTS_WITH_CAFE, ["s0", "f0", "f1", "s1", "s2", "f1"]))[0] == "cafe_slot"   # 카페 칸에 식당
+    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "s2", "f1"])) == ["slots"]                         # 카페 칸이 빠짐
+    assert rules(course(config.COURSE_SLOTS, ["s0", "f0", "s1", "s2", "f1"]), config.COURSE_SLOTS) == []      # 취향이 없으면 다섯 칸이 맞다

@@ -109,24 +109,27 @@ def _fits(c: dict, slot: str) -> bool:
     return c.get("type") in config.SIGHT_TYPES
 
 
-def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None,
-                    exclusions: list | None, rest_table: dict | None = None) -> tuple:
-    """거리 위반이 남은 칸을, 그 날의 규칙을 모두 지키는 가장 가까운 미사용 후보로 바꾼다. (새 코스, [바꾼 칸 {date, slot, old_id, id}])."""
-    # 왜: 재작성을 다 쓰고도 거리 위반이 남으면 칸을 비운 코스가 나갔다(제주 3일 6회 중 2회). 칸을 비우기 전에 코드가 규칙에 맞는 후보를 찾아 넣는다. 어디: validate_course, 재작성 횟수를 다 쓴 뒤.
-    # 교안: 설계 원칙 "판정은 코드가". 2026-11-17 결정. 바꿀 후보가 없으면 예전처럼 그 칸을 뺀다.
+def repair_slots(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None,
+                 exclusions: list | None, rest_table: dict | None = None) -> tuple:
+    """칸 하나의 위반(거리 · 중복 · 휴무 · 내려간 장소 · 제외 · 박물관 수)을 그 날의 규칙을 새로 어기지 않는 가장 가까운 미사용 후보로 바꾼다. (새 코스, [바꾼 칸 {date, slot, old_id, id, rule}])."""
+    # 왜: 재작성을 다 쓰고도 위반이 남으면 칸을 비운 코스가 나갔다(제주 3일 6회 중 2회). 서울 3일에서는 중복 1건뿐인 초안이 다시 쓰다가 나빠졌다(2026-11-19). 칸을 비우거나 다시 쓰기 전에 코드가 규칙에 맞는 후보를 찾아 넣는다. 어디: validate_course.
+    # 교안: 설계 원칙 "판정은 코드가". 2026-11-17 거리, 2026-11-19 나머지 칸 위반으로 넓힘. 바꿀 후보가 없으면 예전처럼 그 칸을 뺀다.
     rest_table, replaced = rest_table or {}, []
     course = {**course, "days": [{**d, "slots": [dict(s) for s in d["slots"]]} for d in course.get("days", [])]}
     check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions)
+    key = lambda v: (v["rule"], v["id"], v["date"], v["slot"])
     for _ in range(sum(len(d["slots"]) for d in course["days"])):   # 한 번에 한 칸씩, 더 고칠 것이 없을 때까지
-        bad = next((v for v in check(course) if v["rule"] == "distance" and v["slot"]), None)
+        done = {(r["date"], r["slot"]) for r in replaced}
+        before_list = check(course)
+        bad = next((v for v in before_list if v["rule"] in config.REPAIR_RULES and v["slot"] and (v["date"], v["slot"]) not in done), None)
         if bad is None:
             break
+        before = {key(v) for v in before_list}
         day = next(d for d in course["days"] if d["date"] == bad["date"])
         at = next(n for n, s in enumerate(day["slots"]) if s["slot"] == bad["slot"])
         used = {s["content_id"] for d in course["days"] for s in d["slots"]}
-        done = {(r["date"], r["slot"]) for r in replaced}
         best = None
-        for n in (at, at - 1):   # 위반은 "앞 장소 → 이 장소" 구간이다. 이 칸을 먼저 바꿔 보고, 안 되면 앞 칸을 바꿔 본다
+        for n in ((at, at - 1) if bad["rule"] == "distance" else (at,)):   # 거리 위반은 "앞 장소 → 이 장소" 구간이다. 이 칸을 먼저 바꿔 보고, 안 되면 앞 칸을 바꿔 본다
             if n < 0 or (day["date"], day["slots"][n]["slot"]) in done:
                 continue
             for cid, c in cands.items():
@@ -134,7 +137,7 @@ def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, reg
                     continue
                 trial_day = {**day, "slots": [{**s, "content_id": cid, "reason": config.REPLACED_REASON} if i == n else s for i, s in enumerate(day["slots"])]}
                 trial = {**course, "days": [trial_day if d["date"] == day["date"] else d for d in course["days"]]}
-                if any((v["date"] == day["date"] and v["rule"] != "day_distance") or v["rule"] in ("museum_limit", "duplicate") for v in check(trial)):   # 하루 합 초과는 구간 바꿔 치기를 막지 않는다
+                if any(key(v) not in before and v["rule"] != "day_distance" for v in check(trial)):   # 새 위반을 만들면 안 된다. 하루 합 초과는 막지 않는다
                     continue
                 legs = _legs(trial_day["slots"], cands)
                 if legs and (best is None or legs[0] < best[0]):
@@ -142,9 +145,9 @@ def repair_distance(course: dict, cands: dict, dates: list, rechecked: dict, reg
             if best:
                 break
         if best is None:
-            break   # 바꿀 후보가 없다. 남은 위반은 호출한 쪽이 예전처럼 뺀다
+            break   # 바꿀 후보가 없다. 남은 위반은 호출한 쪽이 다시 쓰게 하거나 예전처럼 뺀다
         _, n, cid, trial = best
-        replaced.append({"date": day["date"], "slot": day["slots"][n]["slot"], "old_id": day["slots"][n]["content_id"], "id": cid})
+        replaced.append({"date": day["date"], "slot": day["slots"][n]["slot"], "old_id": day["slots"][n]["content_id"], "id": cid, "rule": bad["rule"]})
         course = trial
     return course, replaced
 
@@ -166,23 +169,23 @@ def _legs(slots: list, cands: dict):
 
 
 def reorder_day(slots: list, cands: dict, limit: float):
-    """같은 종류 칸(오전↔오후, 점심↔저녁)을 맞바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
-    # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 어디: validate_course 끝.
-    # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있으면 그 쌍은 두지 않는다. 구간 상한은 넘기지 않는다.
+    """같은 종류 칸(가볼 곳끼리, 점심↔저녁)을 서로 바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
+    # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 가볼 곳이 3칸이 되어(2026-11-17) 쌍 맞바꿈이 아니라 가볼 곳 칸 안의 모든 순서를 본다. 어디: validate_course 끝.
+    # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있는 칸은 옮기지 않는다. 구간 상한은 넘기지 않는다.
     names = [s["slot"] for s in slots]
-    pairs = [(a, b) for a, b in (("오전", "오후"), ("점심", "저녁")) if a in names and b in names
-             and not any(w in slots[names.index(n)]["reason"] for n in (a, b) for w in config.REORDER_TIME_WORDS)]
+    movable = lambda group: [n for n in group if n in names and not any(w in slots[names.index(n)]["reason"] for w in config.REORDER_TIME_WORDS)]
+    groups = [g for g in (movable(config.SIGHT_SLOTS), movable(("점심", "저녁"))) if len(g) >= 2]
     base = _legs(slots, cands)
-    if not pairs or base is None:
+    if not groups or base is None:
         return slots, False
     best, best_slots = base, slots
-    for flags in itertools.product((False, True), repeat=len(pairs)):
+    for perms in itertools.product(*[itertools.permutations(g) for g in groups]):
         trial = [dict(s) for s in slots]
-        for (a, b), on in zip(pairs, flags):
-            if on:
-                i, j = names.index(a), names.index(b)
-                for key in ("content_id", "reason"):
-                    trial[i][key], trial[j][key] = trial[j][key], trial[i][key]
+        for group, perm in zip(groups, perms):
+            for key in ("content_id", "reason"):
+                values = [slots[names.index(p)][key] for p in perm]
+                for slot_name, value in zip(group, values):
+                    trial[names.index(slot_name)][key] = value
         got = _legs(trial, cands)
         if got and got[0] < best[0] - config.REORDER_MIN_GAIN_KM and got[1] <= max(limit, base[1]):
             best, best_slots = got, trial
@@ -216,14 +219,20 @@ def validate_update(stored: dict | None, detail, trace):
         # 왜: 두 번 고쳐도 남은 위반은 그 장소를 빼고 "확인 필요"로 알린다(없는 장소 · 규칙 위반 장소를 코스에 남기지 않는다). 어디: 재작성 횟수를 다 쓴 뒤.
         # 교안: PRD 10번 "위반 & 재작성 = 2 → 위반 장소 제거 + '확인 필요' 표시".
         exhausted = retries_of(state)["draft"] > config.MAX_REDRAFTS
-        if exhausted and any(v["rule"] == "distance" for v in violations):
-            fixed, replaced = repair_distance(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
+        fixable = [v for v in violations if v["rule"] in config.REPAIR_RULES and v["slot"]]
+        # 수정 턴(mode=edit)은 사용자가 요청한 칸을 코드가 몰래 바꾸지 않도록 재작성을 다 쓴 뒤에만 바꾼다
+        early = not exhausted and state.get("mode") != "edit" and 0 < len(fixable) <= config.REPAIR_MAX_SLOTS
+        out["replaced"] = []   # 지난 턴 · 지난 초안의 교체 기록이 남지 않게 비운다
+        if fixable and (exhausted or early):
+            fixed, replaced = repair_slots(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
             if replaced:
                 # 바꿔 넣은 장소도 휴무를 다시 받아 검사한다. 걸리면 아래에서 예전처럼 그 칸을 뺀다
                 rechecked.update(_recheck([r["id"] for r in replaced if r["id"] not in rechecked], stored, detail))
-                course, out["course"], out["replaced"], out["rechecked"] = fixed, fixed, replaced, rechecked
+                course, out["rechecked"] = fixed, rechecked
                 violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
                 out["violations"] = violations
+                if not violations or exhausted:   # 다시 쓰게 되면 이 코스는 버려지므로 교체 기록도 남기지 않는다
+                    out["course"], out["replaced"] = fixed, replaced
         if violations and exhausted:
             # 취향 음식 반복(theme_repeat)은 규칙 위반이 아니라 쏠림이라, 재작성을 다 써도 칸을 비우지 않는다
             bad = {(v["date"], v["slot"]) for v in violations if v["slot"] and v["rule"] != "theme_repeat"}

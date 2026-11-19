@@ -38,7 +38,10 @@ def after_grade(state: State) -> str:
     # 교안: 3일차 05 조건부 엣지 — 반복 상한은 config.MAX_SEARCH_RETRIES.
     if state.get("enough"):
         return "fetch_context"
-    return "transform_query" if _retries(state)["search"] < config.MAX_SEARCH_RETRIES else "abstain"
+    if _retries(state)["search"] < config.MAX_SEARCH_RETRIES:
+        return "transform_query"
+    # 다시 찾기를 다 썼어도 하루 가볼 곳을 줄이면 짤 수 있으면 포기하지 않는다(config.MIN_PLACES_PER_DAY)
+    return "fetch_context" if state.get("grade", {}).get("short_ok") else "abstain"
 
 
 def after_validate(state: State) -> str:

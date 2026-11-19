@@ -26,7 +26,7 @@ class NewQuery(BaseModel):
 
 
 class Slot(BaseModel):
-    slot: Literal["오전", "점심", "카페", "오후", "저녁"] = Field(description="하루 칸. 오전·오후는 가볼 곳, 점심·저녁은 음식점, 카페는 '하루 칸'에 있을 때만")
+    slot: Literal["오전", "점심", "카페", "오후", "늦은 오후", "저녁"] = Field(description="하루 칸. 오전·오후·늦은 오후는 가볼 곳, 점심·저녁은 음식점, 카페는 '하루 칸'에 있을 때만")
     content_id: str = Field(description="후보 장소의 id 를 그대로")
     reason: str = Field(description="이 장소를 이 자리에 넣은 이유 한 문장")
 

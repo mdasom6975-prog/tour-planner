@@ -15,7 +15,7 @@ def item(i, type_="관광지", **kw):
 
 
 def good_results(types):
-    return [item(f"{types[0]}{n}", types[0]) for n in range(2)]
+    return [item(f"{types[0]}{n}", types[0]) for n in range(3)]   # 하루 가볼 곳 3(config.PLACES_PER_DAY)을 채운다
 
 
 class Harness:
@@ -84,14 +84,30 @@ def test_끝까지_부족하면_두번_고치고_포기한다():
     assert path[-1] == "abstain" and "fetch_context" not in path
     assert out["retries"]["search"] == config.MAX_SEARCH_RETRIES
     assert out["answer"]["kind"] == "abstain"
-    assert "가볼 곳 0/2곳" in out["answer"]["text"] and "음식점 0/2곳" in out["answer"]["text"]
+    assert "가볼 곳 0/3곳" in out["answer"]["text"] and "음식점 0/2곳" in out["answer"]["text"]
 
 
 def test_필요한_수는_일수에_비례한다():
-    h = Harness()   # 종류마다 2곳씩만 돌려주므로 2일(필요 4곳)이면 부족하다
+    h = Harness()   # 종류마다 3곳씩만 돌려주므로 2일(가볼 곳 6곳 · 식사 4곳)이면 부족하다
     path, out, _ = run(h, days=2)
     assert path[-1] == "abstain"
-    assert out["answer"]["grade"]["need"] == {"sight": 4, "food": 4}
+    assert out["answer"]["grade"]["need"] == {"sight": 6, "food": 4}
+
+
+def test_끝까지_부족해도_하루_두_곳씩은_채울_수_있으면_칸을_줄여_짠다():
+    from graph.state import slots_for
+    h = Harness(relevant=lambda i: i != "관광지2")   # 가볼 곳 2곳만 통과: 3곳에는 모자라고 2곳(config.MIN_PLACES_PER_DAY)은 채운다
+    path, out, _ = run(h)
+    assert path.count("transform_query") == config.MAX_SEARCH_RETRIES   # 먼저 다시 찾기를 다 쓴다
+    assert "abstain" not in path and "fetch_context" in path
+    assert out["request"]["places_per_day"] == config.MIN_PLACES_PER_DAY and out["grade"]["short_ok"]
+    assert slots_for(out["request"], out["candidates"]) == ["오전", "점심", "오후", "저녁"]
+
+
+def test_다시_찾아_충분해지면_칸을_줄이지_않는다():
+    h = Harness(grades=[lambda i: i != "관광지2", None])
+    path, out, _ = run(h)
+    assert path.count("transform_query") == 1 and "places_per_day" not in out["request"]
 
 
 def test_후보_목록에_없는_id는_무시한다():
