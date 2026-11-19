@@ -340,7 +340,7 @@ def respond_update(state) -> dict:
     # 왜: 재작성을 다 쓰고도 규칙에 맞지 않은 장소는 코스에서 빼고 숨기지 않고 알린다. 어디: 6단계 validate_course 가 남긴 removed.
     # 교안: PRD 10번 "위반 장소 제거 + '확인 필요' 표시".
     for r in state.get("replaced") or []:
-        notices.append(f"{_label(r['date'])} {r['slot']} 칸은 이동 거리가 멀어 {(cands.get(r['id']) or {}).get('title', r['id'])}(으)로 바꿨습니다.")
+        notices.append(f"{_label(r['date'])} {r['slot']} 칸은 {config.REPAIR_WHY.get(r.get('rule'), '규칙에 맞지 않아')} {(cands.get(r['id']) or {}).get('title', r['id'])}(으)로 바꿨습니다.")
     for v in state.get("removed") or []:
         name = (cands.get(v["id"]) or {}).get("title") or v["id"]
         notices.append(f"확인 필요: {_label(v['date'])} {v['slot']} {name} — 규칙에 맞지 않아 뺐습니다({v['rule']}).")

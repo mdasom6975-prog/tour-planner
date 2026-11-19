@@ -168,7 +168,8 @@ def test_위반이_없으면_한_번에_끝나고_코스_장소만_한_번씩_�
     assert out["answer"]["text"].count("정보 방금 확인") == 10
 
 
-def test_휴무를_찾으면_사유를_넣어_다시_쓰고_이미_받은_장소는_다시_받지_않는다():
+def test_휴무를_찾으면_사유를_넣어_다시_쓰고_이미_받은_장소는_다시_받지_않는다(monkeypatch):
+    monkeypatch.setattr(config, "REPAIR_MAX_SLOTS", 0)   # 코드 교체를 끄고 다시 쓰기 경로만 본다
     bad, fixed = good(), good()
     fixed["days"][0]["slots"][0]["content_id"] = "x0"      # s0 → x0 로 교체
     h = Harness([bad, fixed], {"s0": {"rest_status": "weekly", "rest_weekdays": ["토"], "rest_nth": [], "rest_note": False},
@@ -195,7 +196,9 @@ def test_다시_받기에_실패하면_저장분으로_판정하고_기준일을
     stored = {c["id"]: {"rest_status": "weekly", "rest_weekdays": ["토"] if c["id"] == "s0" else [], "rest_nth": [], "rest_note": False, "fetched": "2026-11-10"} for c in CANDS}
     h = Harness([good()], {})          # 실시간은 전부 실패
     out = h.run(stored)
-    assert any(v["rule"] == "closed" and v["id"] == "s0" for v in out["violations"])
+    # 저장분으로 s0 가 토요일 휴무인 것을 알아내, 코드가 가까운 후보로 바꿔 넣고 그 사실을 알린다(2026-11-19)
+    assert out["violations"] == [] and "s0" not in [s["id"] for d in out["answer"]["days"] for s in d["slots"]]
+    assert any("휴무일이 겹쳐" in n for n in out["answer"]["notices"]) and out["retries"]["draft"] == 1
     assert out["rechecked"]["s1"]["source"] == "stored" and out["rechecked"]["s1"]["as_of"] == "2026-11-10"
     assert "정보 2026-11-10 기준(저장분)" in out["answer"]["text"]
 
@@ -303,7 +306,7 @@ def test_후보가_넓게_퍼져_있으면_가까운_것끼리_구역으로_묶�
 
 
 def test_거리_위반이_남은_칸은_규칙을_지키는_가장_가까운_후보로_바꾼다():
-    from graph.validate import repair_distance
+    from graph.validate import repair_slots as repair_distance
     cands = {c["id"]: c for c in [place("a", "sight", "관광지", lon=128.90), place("b", "food", "음식점", lon=128.91),
                                   place("far", "sight", "관광지", lon=129.60), place("d", "food", "음식점", lon=128.92),
                                   place("near", "sight", "관광지", lon=128.93), place("near2", "sight", "관광지", lon=128.99),
@@ -314,7 +317,7 @@ def test_거리_위반이_남은_칸은_규칙을_지키는_가장_가까운_후
     fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None)
     slots = fixed["days"][0]["slots"]
     assert [s["content_id"] for s in slots] == ["a", "b", "near", "late", "d"]   # 가볼 곳 칸에는 가볼 곳만, 가장 가까운 것
-    assert replaced == [{"date": "2026-11-21", "slot": "오후", "old_id": "far", "id": "near"}] and slots[2]["reason"] == config.REPLACED_REASON
+    assert replaced == [{"date": "2026-11-21", "slot": "오후", "old_id": "far", "id": "near", "rule": "distance"}] and slots[2]["reason"] == config.REPLACED_REASON
     assert find_violations(fixed, cands, ["2026-11-21"], {}, "강릉") == [] and course["days"][0]["slots"][2]["content_id"] == "far"   # 원본은 그대로
     # 휴무 표에 그 날 휴무로 적힌 후보는 고르지 않는다. 바꿀 후보가 없으면 그대로 돌려준다
     fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None, {"near": {"2026-11-21": "closed"}})
@@ -422,3 +425,27 @@ def test_늦은_오후_칸에는_가볼_곳만_넣을_수_있다():
     four = {"days": [{"date": D1, "slots": [s for s in good()["days"][0]["slots"] if s["slot"] != "늦은 오후"]}, good()["days"][1]]}
     assert "slots" in [v["rule"] for v in find_violations(four, BY_ID, [D1, D2], {}, "강릉")]   # 옛 4칸 코스는 칸 구성 위반이다
 
+
+def test_칸_하나의_위반은_다시_쓰기_전에_코드가_가까운_후보로_바꾼다():
+    # 왜: 서울 3일에서 중복 1건뿐인 초안이 다시 쓰다가 휴무 · 거리 위반으로 나빠졌다(2026-11-19). 어디: validate_course, 재작성 전.
+    ok = {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False}
+    bad = good()
+    bad["days"][1]["slots"][1]["content_id"] = "f0"   # 둘째 날 점심이 첫째 날 점심과 중복
+    h = Harness([bad], {i: ok for i in ("s0", "s1", "s2", "s3", "m0", "m1", "f0", "f1", "f2", "f3", "x0")})
+    out = h.run()
+    assert out["retries"]["draft"] == 1 and out["violations"] == [] and not out.get("removed")   # 다시 쓰지 않았다
+    assert out["replaced"] and out["replaced"][0]["rule"] == "duplicate" and out["replaced"][0]["slot"] == "점심"
+    ids = [s["id"] for d in out["answer"]["days"] for s in d["slots"]]
+    assert len(ids) == len(set(ids)) == 10
+    assert any("같은 장소가 겹쳐" in n for n in out["answer"]["notices"])
+
+
+def test_위반이_세_칸_이상이면_코드가_바꾸지_않고_다시_쓰게_한다():
+    ok = {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False}
+    bad = good()
+    bad["days"][0]["slots"][0]["content_id"] = "없는곳"
+    bad["days"][0]["slots"][1]["content_id"] = "없는곳2"
+    bad["days"][0]["slots"][2]["content_id"] = "없는곳3"
+    h = Harness([bad, good()], {i: ok for i in ("s0", "s1", "s2", "s3", "m0", "m1", "f0", "f1", "f2", "f3")})
+    out = h.run()
+    assert out["retries"]["draft"] == 2 and out["violations"] == []
