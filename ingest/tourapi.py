@@ -3,6 +3,7 @@
 목록 수집 · 페이지 넘기기 · 저장은 여기 없다. 뒤 조각에서 이 함수를 불러 쓴다.
 """
 import json
+import time
 import os
 from datetime import date
 from pathlib import Path
@@ -23,17 +24,33 @@ def _load_usage(today: str) -> dict:
     # 왜: 날짜가 바뀌면 한도가 초기화되므로 오늘 기록만 쓴다. 어디: call() 시작과 끝.
     # 교안: 3일차 day3_tools._load_cal — 파일이 없으면 빈 값으로 시작하는 패턴.
     if USAGE_PATH.exists():
-        usage = json.loads(USAGE_PATH.read_text(encoding="utf-8"))
+        usage = _read_usage()
         if usage.get("date") == today:
             return usage
     return {"date": today, "counts": {}}
+
+
+def _read_usage() -> dict:
+    # 왜: 다른 프로세스(화면 서버 · 다른 작업)가 같은 파일을 쓰는 순간에 읽으면 빈 내용이 읽혀 수집이 죽었다(2026-11-19, 소개글 900곳 뒤 JSONDecodeError). 잠깐 기다렸다 다시 읽는다. 어디: 한도 기록 읽기.
+    # 교안: 직접 대응 없음. 끝까지 못 읽으면 빈 기록으로 보지 않고 오류를 낸다(빈 기록으로 보면 오늘 호출 수가 0으로 돌아가 한도를 넘길 수 있다).
+    for attempt in range(5):
+        try:
+            return json.loads(USAGE_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    return {}
 
 
 def _save_usage(usage: dict) -> None:
     # 왜: 호출할 때마다 바로 적어야 중간에 멈춰도 횟수가 맞는다. 어디: 요청을 보낸 직후.
     # 교안: 3일차 day3_tools._save_cal — ensure_ascii=False 로 한글을 그대로 저장.
     USAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    USAGE_PATH.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 임시 파일에 다 쓴 뒤 이름을 바꾼다. 파일을 비우고 쓰는 틈에 다른 프로세스가 빈 내용을 읽지 않게 한다(2026-11-19)
+    tmp = USAGE_PATH.with_name(f"{USAGE_PATH.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(usage, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, USAGE_PATH)
 
 
 def _fail(usage_key: str, reason: str, level: str = "warning", **more) -> dict:
