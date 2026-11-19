@@ -166,23 +166,23 @@ def _legs(slots: list, cands: dict):
 
 
 def reorder_day(slots: list, cands: dict, limit: float):
-    """같은 종류 칸(오전↔오후, 점심↔저녁)을 맞바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
-    # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 어디: validate_course 끝.
-    # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있으면 그 쌍은 두지 않는다. 구간 상한은 넘기지 않는다.
+    """같은 종류 칸(가볼 곳끼리, 점심↔저녁)을 서로 바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
+    # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 가볼 곳이 3칸이 되어(2026-11-17) 쌍 맞바꿈이 아니라 가볼 곳 칸 안의 모든 순서를 본다. 어디: validate_course 끝.
+    # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있는 칸은 옮기지 않는다. 구간 상한은 넘기지 않는다.
     names = [s["slot"] for s in slots]
-    pairs = [(a, b) for a, b in (("오전", "오후"), ("점심", "저녁")) if a in names and b in names
-             and not any(w in slots[names.index(n)]["reason"] for n in (a, b) for w in config.REORDER_TIME_WORDS)]
+    movable = lambda group: [n for n in group if n in names and not any(w in slots[names.index(n)]["reason"] for w in config.REORDER_TIME_WORDS)]
+    groups = [g for g in (movable(config.SIGHT_SLOTS), movable(("점심", "저녁"))) if len(g) >= 2]
     base = _legs(slots, cands)
-    if not pairs or base is None:
+    if not groups or base is None:
         return slots, False
     best, best_slots = base, slots
-    for flags in itertools.product((False, True), repeat=len(pairs)):
+    for perms in itertools.product(*[itertools.permutations(g) for g in groups]):
         trial = [dict(s) for s in slots]
-        for (a, b), on in zip(pairs, flags):
-            if on:
-                i, j = names.index(a), names.index(b)
-                for key in ("content_id", "reason"):
-                    trial[i][key], trial[j][key] = trial[j][key], trial[i][key]
+        for group, perm in zip(groups, perms):
+            for key in ("content_id", "reason"):
+                values = [slots[names.index(p)][key] for p in perm]
+                for slot_name, value in zip(group, values):
+                    trial[names.index(slot_name)][key] = value
         got = _legs(trial, cands)
         if got and got[0] < best[0] - config.REORDER_MIN_GAIN_KM and got[1] <= max(limit, base[1]):
             best, best_slots = got, trial

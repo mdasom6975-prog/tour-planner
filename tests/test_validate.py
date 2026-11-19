@@ -19,7 +19,7 @@ def place(i, kind, type_, lon=128.90, lat=37.7, **kw):
 
 
 CANDS = ([place(f"s{n}", "sight", "관광지", lon=128.90 + n * 0.01) for n in range(4)] + [place(f"m{n}", "sight", "문화시설") for n in range(2)]
-         + [place(f"f{n}", "food", "음식점", lon=128.90 + n * 0.01) for n in range(4)] + [place("far", "sight", "관광지", lon=129.60)])   # far: 약 61km
+         + [place(f"f{n}", "food", "음식점", lon=128.90 + n * 0.01) for n in range(4)] + [place("far", "sight", "관광지", lon=129.60), place("x0", "sight", "관광지", lon=128.95)])   # far: 약 61km
 BY_ID = {c["id"]: c for c in CANDS}
 
 
@@ -28,7 +28,7 @@ def slots(ids):
 
 
 def good():
-    return {"days": [{"date": D1, "slots": slots(["s0", "f0", "s1", "f1"])}, {"date": D2, "slots": slots(["s2", "f2", "s3", "f3"])}]}
+    return {"days": [{"date": D1, "slots": slots(["s0", "f0", "s1", "m0", "f1"])}, {"date": D2, "slots": slots(["s2", "f2", "s3", "m1", "f3"])}]}
 
 
 def live(status="always_open", weekdays=(), nth=(), note=False, withdrawn=False):
@@ -160,23 +160,23 @@ class Harness:
 
 def test_위반이_없으면_한_번에_끝나고_코스_장소만_한_번씩_다시_받는다():
     ok = {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False}
-    h = Harness([good()], {i: ok for i in ("s0", "s1", "s2", "s3", "f0", "f1", "f2", "f3")})
+    h = Harness([good()], {i: ok for i in ("s0", "s1", "s2", "s3", "m0", "m1", "f0", "f1", "f2", "f3")})
     out = h.run()
     assert out["violations"] == [] and out["retries"]["draft"] == 1 and out["answer"]["kind"] == "course"
-    assert sorted(h.detail_calls) == ["f0", "f1", "f2", "f3", "s0", "s1", "s2", "s3"]     # 코스에 든 8곳만
+    assert sorted(h.detail_calls) == ["f0", "f1", "f2", "f3", "m0", "m1", "s0", "s1", "s2", "s3"]     # 코스에 든 10곳만
     assert set(out["rechecked"]) == set(h.detail_calls)
-    assert out["answer"]["text"].count("정보 방금 확인") == 8
+    assert out["answer"]["text"].count("정보 방금 확인") == 10
 
 
 def test_휴무를_찾으면_사유를_넣어_다시_쓰고_이미_받은_장소는_다시_받지_않는다():
     bad, fixed = good(), good()
-    fixed["days"][0]["slots"][0]["content_id"] = "m0"      # s0 → m0 로 교체
+    fixed["days"][0]["slots"][0]["content_id"] = "x0"      # s0 → x0 로 교체
     h = Harness([bad, fixed], {"s0": {"rest_status": "weekly", "rest_weekdays": ["토"], "rest_nth": [], "rest_note": False},
-                               **{i: {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False} for i in ("s1", "s2", "s3", "f0", "f1", "f2", "f3", "m0")}})
+                               **{i: {"rest_status": "always_open", "rest_weekdays": [], "rest_nth": [], "rest_note": False} for i in ("s1", "s2", "s3", "m0", "m1", "f0", "f1", "f2", "f3", "x0")}})
     out = h.run()
     assert out["retries"]["draft"] == 2 and out["violations"] == []
     assert "장소s0 은(는) 11/21(토) 휴무입니다" in h.prompts[1]        # 위반 사유가 재작성 입력에 들어갔다
-    assert h.detail_calls.count("s0") == 1 and h.detail_calls.count("s1") == 1 and h.detail_calls.count("m0") == 1
+    assert h.detail_calls.count("s0") == 1 and h.detail_calls.count("s1") == 1 and h.detail_calls.count("x0") == 1
     assert out["rest_table"]["s0"] == {D1: "closed"}                    # 다시 받은 값으로 표가 갱신된다
 
 
@@ -186,7 +186,7 @@ def test_두_번_고쳐도_남으면_위반_장소를_빼고_확인_필요로_�
     h = Harness([bad])
     out = h.run()
     assert out["retries"]["draft"] == config.MAX_REDRAFTS + 1 and out["violations"]
-    assert all(s["content_id"] != "없는곳" for d in out["course"]["days"] for s in d["slots"]) and len(out["course"]["days"][0]["slots"]) == 3
+    assert all(s["content_id"] != "없는곳" for d in out["course"]["days"] for s in d["slots"]) and len(out["course"]["days"][0]["slots"]) == 4
     assert any("확인 필요: 11/21(토) 오전 없는곳" in n for n in out["answer"]["notices"]) and out["answer"]["kind"] == "course"
     assert "없는곳" not in "".join(s["id"] for d in out["answer"]["days"] for s in d["slots"])
 
@@ -219,43 +219,47 @@ def _cands(**pos):   # 경도(동서)만 달라 거리가 단순하다: 0.01도 
     return {cid: place(cid, "sight", "관광지", lon=128.9 + off) for cid, off in pos.items()}
 
 
-GEO = dict(a=0.00, b=0.30, c=0.31, d=0.01)   # 오전 a(서) → 점심 b(동) → 오후 c(동) → 저녁 d(서): 서-동-서로 두 번 가로지른다
+GEO = dict(a=0.00, b=0.30, c=0.31, x=0.33, d=0.01)   # 오전 a(서) → 점심 b(동) → 오후 c(동) → 늦은 오후 x(동) → 저녁 d(서): 서-동-서로 두 번 가로지른다
+FIVE = ["오전", "점심", "오후", "늦은 오후", "저녁"]
 
 
 def test_맞바꾸면_짧아질_때_같은_종류_칸을_바꾼다():
     from graph.validate import _legs, reorder_day
     cands = _cands(**GEO)
-    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]
+    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("늦은 오후", "x"), _slot("저녁", "d")]
     got, changed = reorder_day(slots, cands, 25)
-    assert changed and [s["content_id"] for s in got] == ["a", "d", "c", "b"]   # 점심 ↔ 저녁
-    assert [s["slot"] for s in got] == ["오전", "점심", "오후", "저녁"]   # 칸 이름과 순서는 그대로
+    assert changed and [s["content_id"] for s in got][:2] == ["a", "d"] and got[4]["content_id"] == "b"   # 점심 ↔ 저녁, 동쪽 가볼 곳 둘은 이어 둔다
+    assert [s["slot"] for s in got] == FIVE   # 칸 이름과 순서는 그대로
     assert _legs(got, cands)[0] < _legs(slots, cands)[0] - 20
 
 
 def test_이득이_작으면_바꾸지_않는다():
     from graph.validate import reorder_day
-    cands = _cands(a=0.00, b=0.001, c=0.002, d=0.003)
-    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]
+    cands = _cands(a=0.00, b=0.001, c=0.002, x=0.003, d=0.004)
+    slots = [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("늦은 오후", "x"), _slot("저녁", "d")]
     got, changed = reorder_day(slots, cands, 25)
     assert not changed and got is slots
 
 
 def test_이유에_시간_낱말이_있으면_그_쌍은_바꾸지_않는다():
     from graph.validate import reorder_day
-    slots = [_slot("오전", "a", "오전에 걷기 좋습니다."), _slot("점심", "b", "점심으로 먹기 좋습니다."), _slot("오후", "c"), _slot("저녁", "d")]
+    slots = [_slot("오전", "a", "오전에 걷기 좋습니다."), _slot("점심", "b", "점심으로 먹기 좋습니다."), _slot("오후", "c", "오후에 갑니다."),
+             _slot("늦은 오후", "x", "오후 늦게 갑니다."), _slot("저녁", "d")]
     got, changed = reorder_day(slots, _cands(**GEO), 25)
-    assert not changed and [s["content_id"] for s in got] == ["a", "b", "c", "d"]   # 두 쌍 모두 막힘
-    slots[0]["reason"] = "걷기 좋습니다."   # 오전 쌍만 풀면 오전 ↔ 오후는 바뀐다
+    assert not changed and [s["content_id"] for s in got] == ["a", "b", "c", "x", "d"]   # 가볼 곳 · 식사 모두 막힘
+    for s in slots[:4]:
+        s["reason"] = "걷기 좋습니다."   # 시간 낱말을 모두 풀면 바뀐다
     got, changed = reorder_day(slots, _cands(**GEO), 25)
-    assert changed and [s["content_id"] for s in got] == ["c", "b", "a", "d"]
+    assert changed and [s["content_id"] for s in got][1] == "d"
 
 
 def test_장소와_이유는_함께_움직이고_카페_칸은_제자리다():
     from graph.validate import reorder_day
     cands = _cands(**GEO, e=0.15)
-    slots = [_slot("오전", "a", "이유a"), _slot("점심", "b", "이유b"), _slot("카페", "e", "이유e"), _slot("오후", "c", "이유c"), _slot("저녁", "d", "이유d")]
+    slots = [_slot("오전", "a", "이유a"), _slot("점심", "b", "이유b"), _slot("카페", "e", "이유e"), _slot("오후", "c", "이유c"), _slot("늦은 오후", "x", "이유x"),
+             _slot("저녁", "d", "이유d")]
     got, changed = reorder_day(slots, cands, 25)
-    assert changed and [s["slot"] for s in got] == ["오전", "점심", "카페", "오후", "저녁"]
+    assert changed and [s["slot"] for s in got] == ["오전", "점심", "카페", "오후", "늦은 오후", "저녁"]
     assert next(s for s in got if s["slot"] == "카페")["content_id"] == "e"
     assert all(s["reason"] == "이유" + s["content_id"] for s in got)   # 이유는 장소를 따라간다
 
@@ -263,13 +267,13 @@ def test_장소와_이유는_함께_움직이고_카페_칸은_제자리다():
 def test_수정_턴에서는_칸을_맞바꾸지_않는다():
     # 왜: "점심만 바꿔 줘" 뒤 검증에서 맞바꿈이 돌아 오전 · 오후 · 저녁 자리까지 움직였다(dev e05). 새 요청일 때만 맞바꾼다.
     from graph.validate import validate_update
-    cands = [{**c, "kind": "food" if c["id"] in "bd" else "sight", "type": "음식점" if c["id"] in "bd" else "관광지"} for c in _cands(a=0.00, b=0.05, c=0.06, d=0.01).values()]   # 구간이 5km 안쪽이라 거리 위반은 없다
-    course = {"days": [{"date": "2026-11-21", "slots": [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("저녁", "d")]}], "backup": [], "cafes": []}
+    cands = [{**c, "kind": "food" if c["id"] in "bd" else "sight", "type": "음식점" if c["id"] in "bd" else "관광지"} for c in _cands(a=0.00, b=0.05, c=0.06, x=0.07, d=0.01).values()]   # 구간이 5km 안쪽이라 거리 위반은 없다
+    course = {"days": [{"date": "2026-11-21", "slots": [_slot("오전", "a"), _slot("점심", "b"), _slot("오후", "c"), _slot("늦은 오후", "x"), _slot("저녁", "d")]}], "backup": [], "cafes": []}
     base = {"course": course, "candidates": cands, "request": {"region": "강릉", "start_date": "2026-11-21", "days": 1, "preferences": []}, "retries": {"draft": 1}}
     update = validate_update({}, None, Trace(save=False))
     order = lambda out: [s["content_id"] for s in out.get("course", course)["days"][0]["slots"]]
-    assert order(update({**base, "mode": "edit"})) == ["a", "b", "c", "d"]
-    assert order(update({**base, "mode": "new"})) != ["a", "b", "c", "d"]
+    assert order(update({**base, "mode": "edit"})) == ["a", "b", "c", "x", "d"]
+    assert order(update({**base, "mode": "new"})) != ["a", "b", "c", "x", "d"]
 
 
 def test_제외_조건_낱말이_그대로_있는_장소는_코드가_막는다():
@@ -280,7 +284,8 @@ def test_제외_조건_낱말이_그대로_있는_장소는_코드가_막는다(
     assert hits_exclusion(fish, ["회"]) is None   # 한 글자 낱말은 아무 데나 걸려서 쓰지 않는다
     cands = {**BY_ID, "fish": fish}
     course = {"days": [{"date": "2026-11-21", "slots": [{"slot": "오전", "content_id": "s0", "reason": ""}, {"slot": "점심", "content_id": "fish", "reason": ""},
-                                                        {"slot": "오후", "content_id": "s1", "reason": ""}, {"slot": "저녁", "content_id": "f1", "reason": ""}]}]}
+                                                        {"slot": "오후", "content_id": "s1", "reason": ""}, {"slot": "늦은 오후", "content_id": "s2", "reason": ""},
+                                                        {"slot": "저녁", "content_id": "f1", "reason": ""}]}]}
     rules = lambda ex: [(v["rule"], v["id"]) for v in find_violations(course, cands, ["2026-11-21"], {}, "강릉", None, ex)]
     assert ("excluded", "fish") in rules(["해산물"]) and rules([]) == []
 
@@ -302,18 +307,19 @@ def test_거리_위반이_남은_칸은_규칙을_지키는_가장_가까운_후
     cands = {c["id"]: c for c in [place("a", "sight", "관광지", lon=128.90), place("b", "food", "음식점", lon=128.91),
                                   place("far", "sight", "관광지", lon=129.60), place("d", "food", "음식점", lon=128.92),
                                   place("near", "sight", "관광지", lon=128.93), place("near2", "sight", "관광지", lon=128.99),
-                                  place("food2", "food", "음식점", lon=128.94)]}
+                                  place("food2", "food", "음식점", lon=128.94), place("late", "sight", "관광지", lon=128.935)]}
     course = {"days": [{"date": "2026-11-21", "slots": [{"slot": "오전", "content_id": "a", "reason": "r"}, {"slot": "점심", "content_id": "b", "reason": "r"},
-                                                        {"slot": "오후", "content_id": "far", "reason": "r"}, {"slot": "저녁", "content_id": "d", "reason": "r"}]}]}
+                                                        {"slot": "오후", "content_id": "far", "reason": "r"}, {"slot": "늦은 오후", "content_id": "late", "reason": "r"},
+                                                        {"slot": "저녁", "content_id": "d", "reason": "r"}]}]}
     fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None)
     slots = fixed["days"][0]["slots"]
-    assert [s["content_id"] for s in slots] == ["a", "b", "near", "d"]   # 가볼 곳 칸에는 가볼 곳만, 가장 가까운 것
+    assert [s["content_id"] for s in slots] == ["a", "b", "near", "late", "d"]   # 가볼 곳 칸에는 가볼 곳만, 가장 가까운 것
     assert replaced == [{"date": "2026-11-21", "slot": "오후", "old_id": "far", "id": "near"}] and slots[2]["reason"] == config.REPLACED_REASON
     assert find_violations(fixed, cands, ["2026-11-21"], {}, "강릉") == [] and course["days"][0]["slots"][2]["content_id"] == "far"   # 원본은 그대로
     # 휴무 표에 그 날 휴무로 적힌 후보는 고르지 않는다. 바꿀 후보가 없으면 그대로 돌려준다
     fixed, replaced = repair_distance(course, cands, ["2026-11-21"], {}, "강릉", None, None, {"near": {"2026-11-21": "closed"}})
     assert fixed["days"][0]["slots"][2]["content_id"] == "near2"
-    only = {k: v for k, v in cands.items() if k in ("a", "b", "far", "d")}
+    only = {k: v for k, v in cands.items() if k in ("a", "b", "far", "late", "d")}
     assert repair_distance(course, only, ["2026-11-21"], {}, "강릉", None, None)[1] == []
 
 
@@ -325,8 +331,8 @@ def bread_cands(n_other=4, theme=True):   # b: 검색이 취향 질의로만 찾
     return {c["id"]: c for c in rows}
 
 
-def bread_course(meals):   # 하루: 오전 g0 · 점심 meals[0] · 오후 g1 · 저녁 meals[1]
-    return {"days": [{"date": D1, "slots": slots(["g0", meals[0], "g1", meals[1]])}]}
+def bread_course(meals):   # 하루: 오전 g0 · 점심 meals[0] · 오후 g1 · 늦은 오후 g2 · 저녁 meals[1]
+    return {"days": [{"date": D1, "slots": slots(["g0", meals[0], "g1", "g2", meals[1]])}]}
 
 
 def theme_rules(course, cands):
@@ -362,10 +368,11 @@ def test_재작성을_다_써도_취향_음식_반복은_칸을_비우지_않는
 
 
 # --- 하루 총 이동 거리 상한 (2026-11-17) ----------------------------------------
-def spread_cands(step_deg):   # 한 줄(경도)로 step_deg 간격 장소 4개 + 식당 4개. 0.01도 ≈ 0.9km
-    # 칸 순서(p0 · q0 · p1 · q1)대로 경도가 한 칸씩 늘어나게 둔다
+def spread_cands(step_deg):   # 한 줄(경도)로 step_deg 간격 장소 5개(가볼 곳 3 + 식당 2). 0.01도 ≈ 0.9km
+    # 칸 순서(p0 · q0 · p1 · p2 · q1)대로 경도가 한 칸씩 늘어나게 둔다
     rows = [place("p0", "sight", "관광지", lon=128.90), place("q0", "food", "음식점", lon=128.90 + step_deg),
-            place("p1", "sight", "관광지", lon=128.90 + 2 * step_deg), place("q1", "food", "음식점", lon=128.90 + 3 * step_deg)]
+            place("p1", "sight", "관광지", lon=128.90 + 2 * step_deg), place("p2", "sight", "관광지", lon=128.90 + 3 * step_deg),
+            place("q1", "food", "음식점", lon=128.90 + 4 * step_deg)]
     return {c["id"]: c for c in rows}
 
 
@@ -374,11 +381,11 @@ def one_day(ids):
 
 
 def day_rules(cands, region):
-    return [v["rule"] for v in find_violations(one_day(["p0", "q0", "p1", "q1"]), cands, [D1], {}, region)]
+    return [v["rule"] for v in find_violations(one_day(["p0", "q0", "p1", "p2", "q1"]), cands, [D1], {}, region)]
 
 
 def test_하루_직선거리_합이_지역_상한을_넘으면_위반이다():
-    # 제주 하루 상한 38km. 칸 사이 0.1도(약 8.8km)씩이라 합 약 26km 는 통과, 0.2도(약 17.7km)씩이라 합 약 53km 는 위반이다.
+    # 제주 하루 상한 38km. 칸 사이 0.1도(약 8.8km)씩 4구간이라 합 약 35km 는 통과, 0.2도(약 17.7km)씩이라 합 약 71km 는 위반이다.
     assert "day_distance" not in day_rules(spread_cands(0.1), "제주")
     assert "day_distance" in day_rules(spread_cands(0.2), "제주")
 
@@ -390,10 +397,28 @@ def test_하루_상한이_없는_지역은_이_검사를_하지_않는다():
 def test_하루_합_위반은_칸을_비우거나_거리_위반_수리를_막지_않는다():
     # 왜: 하루 합은 칸 하나의 문제가 아니라서 slot 이 없다. 재작성을 다 써도 칸을 빼지 않아야 한다. 어디: validate_course 제거 단계.
     cands = spread_cands(0.2)
-    state = {"course": one_day(["p0", "q0", "p1", "q1"]), "candidates": list(cands.values()), "retries": {"draft": config.MAX_REDRAFTS + 1},
+    state = {"course": one_day(["p0", "q0", "p1", "p2", "q1"]), "candidates": list(cands.values()), "retries": {"draft": config.MAX_REDRAFTS + 1},
              "request": {"region": "제주", "start_date": D1, "days": 1}}
     from graph.validate import validate_update
     out = validate_update({}, None, Trace(save=False))(state)
     assert any(v["rule"] == "day_distance" and v["slot"] is None for v in out["violations"])
     assert not out.get("removed")
-    assert len(out.get("course", state["course"])["days"][0]["slots"]) == 4
+    assert len(out.get("course", state["course"])["days"][0]["slots"]) == 5
+
+
+# --- 하루 가볼 곳 3칸 (2026-11-17) -------------------------------------------------
+def test_하루_칸은_가볼_곳_세_칸과_식사_두_칸이다():
+    # 왜: 코스가 빈약하다는 의견으로 오후를 둘로 나눴다(사용자 결정). 칸 구성이 한 곳에서 정해지는지 본다. 어디: config 의 하루 칸.
+    assert config.COURSE_SLOTS == ["오전", "점심", "오후", "늦은 오후", "저녁"] and config.PLACES_PER_DAY == 3
+    assert [n for n in config.COURSE_SLOTS if n in config.SIGHT_SLOTS] == ["오전", "오후", "늦은 오후"]
+    assert config.COURSE_SLOTS_WITH_CAFE == ["오전", "점심", "카페", "오후", "늦은 오후", "저녁"]
+    assert len(config.COURSE_SLOTS) - len(config.SIGHT_SLOTS) == config.MEALS_PER_DAY
+
+
+def test_늦은_오후_칸에는_가볼_곳만_넣을_수_있다():
+    c = good()
+    c["days"][0]["slots"][3]["content_id"] = "f2"   # 늦은 오후 칸에 식당
+    assert ("slot_type", "늦은 오후") in [(v["rule"], v["slot"]) for v in find_violations(c, BY_ID, [D1, D2], {}, "강릉")]
+    four = {"days": [{"date": D1, "slots": [s for s in good()["days"][0]["slots"] if s["slot"] != "늦은 오후"]}, good()["days"][1]]}
+    assert "slots" in [v["rule"] for v in find_violations(four, BY_ID, [D1, D2], {}, "강릉")]   # 옛 4칸 코스는 칸 구성 위반이다
+

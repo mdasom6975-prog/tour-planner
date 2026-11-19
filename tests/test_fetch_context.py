@@ -186,7 +186,7 @@ def test_그래프에서_조건_검색_판정_다음에_context가_채워진다(
 
     def search(query, *, region, types, area):
         return {"ok": True, "results": [{"id": f"{types[0]}{n}", "title": "t", "type": types[0], "addr": "강릉시", "lat": 37.0,
-                                         "lon": 128.0, "snippet": "", "score": 1} for n in range(2)]}
+                                         "lon": 128.0, "snippet": "", "score": 1} for n in range(3)]}
     stored = {"관광지0": stored_place("weekly", ["월"])}
     g = build_graph(Trace(save=False), llm=llm, today="2026-11-13", search=search, weather=ok_weather(), festivals=ok_fest(), stored=stored)
     out = g.invoke({"message": "x"})

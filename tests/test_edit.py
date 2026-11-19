@@ -6,19 +6,19 @@ from harness.trace import Trace
 from tests.test_draft_respond import CANDS as BASE, place, D1, D2, WEATHER, course
 
 def day(date, ids):
-    return {"date": date, "slots": [{"slot": sl, "content_id": i, "reason": "이유"} for sl, i in zip(["오전", "점심", "오후", "저녁"], ids)]}
+    return {"date": date, "slots": [{"slot": sl, "content_id": i, "reason": "이유"} for sl, i in zip(config.COURSE_SLOTS, ids)]}
 
 
 CANDS = BASE + [place("f4", "food", "음식점")]
-OLD = course(days=[day(D1, ["m2", "f0", "m3", "f1"]), day(D2, ["s0", "f3", "s1", "f2"])], backup=("m0", "m1"))
+OLD = course(days=[day(D1, ["m2", "f0", "m3", "m0", "f1"]), day(D2, ["s0", "f3", "s1", "s2", "f2"])], backup=("m1",))
 PREV = {"request": {"region": "강릉", "start_date": D1, "days": 2, "preferences": []}, "candidates": CANDS, "weather": WEATHER,
         "festivals": {"ok": True, "items": [], "long_running": [], "notice": ""}, "rest_table": {}, "course": OLD,
         "answer": {"kind": "course", "text": "x"}, "retries": {"search": 1, "draft": 3}, "violations": ["옛 위반"], "removed": [{"id": "z"}]}
 
 
 def swap_lunch(new_id, note=""):
-    days = [day(D1, ["m2", new_id, "m3", "f1"]), day(D2, ["s0", "f3", "s1", "f2"])]
-    return {**course(days=days, backup=("m0",)), "note": note}
+    days = [day(D1, ["m2", new_id, "m3", "m0", "f1"]), day(D2, ["s0", "f3", "s1", "s2", "f2"])]
+    return {**course(days=days, backup=("m1",)), "note": note}
 
 
 class Fake:
