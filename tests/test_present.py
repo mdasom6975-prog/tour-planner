@@ -1,5 +1,5 @@
 """graph/present.py(요약 · 지도 경로 · 내려받기 문서)를 확인한다. Streamlit · 네트워크를 쓰지 않는다. (14번 7단계)"""
-from graph.present import CREDIT, map_view, POLICY_URL, export_markdown, excerpt, map_link, route_by_day, shop_link, summary_line, weather_line
+from graph.present import CREDIT, map_view, POLICY_URL, export_markdown, excerpt, map_link, route_by_day, shop_link, visit_info, summary_line, weather_line
 
 SLOT = {"slot": "오전", "id": "1", "title": "안목해변", "type": "관광지", "addr": "강릉시 창해로", "lat": 37.77, "lon": 128.95, "leg_km": None,
         "facts": ["반려동물 동반 가능(전 구역)", "정보 방금 확인"], "access": [("이동 · 시설", ["접근로: 경사로"])], "reason": "바다 산책"}
@@ -132,3 +132,9 @@ def test_비_오는_날에만_실내_위주_이유를_보인다():
     from graph.present import rain_note
     assert rain_note({"indoor": True}, "실내 테마파크 위주로 골랐습니다.") == "비·눈 예보로 실내 위주로 짰습니다. 실내 테마파크 위주로 골랐습니다."
     assert rain_note({"indoor": False}, "이유") == "" and rain_note({"indoor": True}, "") == "" and rain_note(None, "이유") == ""
+
+
+def test_이용_시간과_휴무일_원문을_줄로_만들고_빈_값은_뺀다():
+    assert visit_info({"hours_text": "09:00~18:00", "rest_text": "매주 월요일"}) == ["이용 시간: 09:00~18:00", "휴무일: 매주 월요일"]
+    assert visit_info({"hours_text": "상시 개방", "rest_text": ""}) == ["이용 시간: 상시 개방"] and visit_info({}) == []
+    assert visit_info({"hours_text": "가" * 200})[0].endswith("…")

@@ -23,6 +23,13 @@ def excerpt(text: str, limit: int = 140) -> str:
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def visit_info(place: dict) -> list:
+    """저장된 이용 시간 · 휴무일 원문 → ['이용 시간: …', '휴무일: …']. 비어 있으면 그 줄은 뺀다. 문장은 고치지 않고 길면 자르기만 한다."""
+    # 왜: 갔는데 닫혀 있는 일을 줄이려고 관광공사 원문을 카드에 그대로 보인다. 어디: 코스 카드(app.py draw_slot).
+    # 교안: 직접 대응 없음(2026-11-19 요청). 저장 5,407곳 중 이용 시간 5,264 · 휴무일 5,102곳에 값이 있다.
+    return [f"{label}: {excerpt(place.get(key), 100)}" for label, key in (("이용 시간", "hours_text"), ("휴무일", "rest_text")) if excerpt(place.get(key))]
+
+
 def map_link(place: dict) -> str:
     # 왜: 이름으로 검색하면 같은 이름이 여러 곳 나오고 축제는 아예 안 나온다. 가진 좌표로 한 곳을 바로 찍는다. 어디: 지도 링크.
     # 교안: 직접 대응 없음. 설계 원칙 "사실은 코드가" — 위치를 지도 검색에 맡기지 않고 받은 좌표를 그대로 쓴다.
