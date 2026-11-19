@@ -23,7 +23,7 @@ def test_점심_저녁에_카페가_들어가면_위반이다():
 def test_음식점_결과를_식당과_카페로_나누고_식당만_센다():
     def search(query, *, region, types, area):
         if types == config.FOOD_TYPES:
-            rows = [{"id": f"f{n}", "title": f"식당{n}", "type": "음식점", "is_cafe": False} for n in range(12)]
+            rows = [{"id": f"f{n}", "title": f"식당{n}", "type": "음식점", "is_cafe": False} for n in range(config.SEARCH_K + 2)]
             rows[1:1] = [{"id": f"c{n}", "title": f"카페{n}", "type": "음식점", "is_cafe": True} for n in range(4)]   # 위쪽에 카페가 섞여 있다
             return {"ok": True, "results": rows}
         return {"ok": True, "results": []}

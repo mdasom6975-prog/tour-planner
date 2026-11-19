@@ -385,7 +385,7 @@ def day_rules(cands, region):
 
 
 def test_하루_직선거리_합이_지역_상한을_넘으면_위반이다():
-    # 제주 하루 상한 38km. 칸 사이 0.1도(약 8.8km)씩 4구간이라 합 약 35km 는 통과, 0.2도(약 17.7km)씩이라 합 약 71km 는 위반이다.
+    # 제주 하루 상한 50km. 칸 사이 0.1도(약 8.8km)씩 4구간이라 합 약 35km 는 통과, 0.2도(약 17.7km)씩이라 합 약 71km 는 위반이다.
     assert "day_distance" not in day_rules(spread_cands(0.1), "제주")
     assert "day_distance" in day_rules(spread_cands(0.2), "제주")
 
