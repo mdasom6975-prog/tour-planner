@@ -30,9 +30,9 @@ def make_graph(retriever, trace: Trace | None = None, *, provider: str | None = 
         trace or Trace(), checkpointer, llm=llm or make_llm(provider), today=today,
         # 왜: 음식점 결과에는 카페가 섞여 있어 걸러 내면 식당이 모자란다. 음식점은 넉넉히 받고 retrieve 가 식당 · 카페로 나눠 자른다. 어디: 검색 k.
         # 교안: 직접 대응 없음.
-        search=lambda q, region=None, types=None, area=None: search_places(
+        search=lambda q, region=None, types=None, area=None, prefer=None: search_places(
             q, region=region, types=types, area=area, k=config.SEARCH_K * (config.OVERFETCH if types in (config.FOOD_TYPES, config.INDOOR_TYPES) else 1),
-            retriever=retriever, today=today),
+            retriever=retriever, today=today, prefer=prefer),
         areas=areas,
         # 왜: 평가는 고정 날씨표와 저장분만 쓴다(2026-11-16 결정). 조회 함수를 넘기면 그것만 쓰고, 안 넘기면 화면처럼 실제 호출이다. 어디: 날씨 · 실시간 재확인.
         # 교안: 4일차 PRD "가짜 날씨 데이터를 주입".

@@ -10,11 +10,14 @@ from datetime import date
 
 import config
 from graph.context import _label, trip_dates
+from graph.menu import place_menu_keywords
 from graph.state import hits_exclusion, retries_of, slots_for
 from tools.geo import distance_km
+from tools.hours import describe, hhmm, open_at, parse_hours
 from tools.rest import rest_on
 
 REST_KEYS = ("rest_status", "rest_weekdays", "rest_nth", "rest_note")
+RECHECK_KEYS = REST_KEYS + ("hours_text",)   # 다시 받은 값에서 가져오는 칸: 휴무 4칸 + 이용시간 문장(T4)
 
 
 def _v(rule: str, reason: str, id=None, date=None, slot=None) -> dict:
@@ -28,18 +31,38 @@ def _recheck(ids: list, stored: dict, detail) -> dict:
         if got is None or not got.get("ok"):   # 다시 받지 못하면 저장분으로 대신한다(어디서 온 값인지 표시)
             place = stored.get(cid, {})
             return cid, {"source": "stored", "as_of": place.get("fetched", ""), "withdrawn": False, "note": (got or {}).get("reason", ""),
-                         "place": {k: place.get(k) for k in REST_KEYS}}
+                         "place": {k: place.get(k) for k in RECHECK_KEYS}}
         return cid, {"source": got["source"], "as_of": got["as_of"], "withdrawn": bool(got["withdrawn"]), "note": got.get("note", ""),
-                     "place": {k: got["place"].get(k) for k in REST_KEYS}}
+                     "place": {k: got["place"].get(k) for k in RECHECK_KEYS}}
     # 왜: 호출 한도 기록 파일(data/raw/_usage.json)을 읽고 쓰는 call()은 동시에 부르면 파일이 깨진다(2026-11-13 실행에서 확인). 장소당 약 315ms라 8곳이 순서대로 약 2.5초다. 어디: 다시 받기.
     # 교안: 직접 대응 없음. 병렬로 하려면 호출 쪽에 잠금을 먼저 넣어야 한다.
     return dict(one(cid) for cid in ids)
 
 
+def hours_of(cands: dict, stored: dict, rechecked: dict) -> dict:
+    """{id: 이용시간 문장}. 다시 받은 값(rechecked)이 있으면 그것, 없으면 저장분(stored)이다. 바꿔 넣을 후보도 저장분으로 미리 볼 수 있게 후보 전체를 넣는다."""
+    # 왜: 휴무일과 같은 출처 규칙이다(PRD F3 "검증에는 실시간으로 다시 받은 값을 쓴다"). 후보(cands)에는 이용시간이 없어 저장된 장소에서 가져온다. 어디: validate_update.
+    # 교안: 직접 대응 없음(2026-11-19 T4). 문장을 못 구한 장소는 값이 None 이라 "확인 필요"로 남는다(위반으로 보지 않음).
+    out = {cid: (stored.get(cid) or {}).get("hours_text") for cid in cands}
+    for cid, r in rechecked.items():
+        if cid in out and r["place"].get("hours_text") is not None:
+            out[cid] = r["place"]["hours_text"]
+    return out
+
+
+def hours_violation(c: dict, slot: str, text) -> str | None:
+    """그 칸의 대표 시각(config.SLOT_MINUTES)에 문을 닫았으면 사유, 열었거나 알 수 없으면 None."""
+    minute = config.SLOT_MINUTES.get(slot)
+    parsed = parse_hours(text)
+    if minute is None or open_at(parsed, minute) != "closed":
+        return None
+    return f"{c.get('title')} 은(는) {slot} 칸({hhmm(minute)} 경)에 문을 닫는 시간입니다(이용시간 {describe(parsed)}). 그 시간에 여는 장소로 바꾸세요."
+
+
 def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None = None,
-                    exclusions: list | None = None) -> list:
-    """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다."""
-    out, seen, museums = [], set(), 0
+                    exclusions: list | None = None, menus: dict | None = None, hours: dict | None = None) -> list:
+    """순수 함수: 코스 · 후보 · 다시 받은 값으로 위반 목록을 만든다. menus={id: 대표메뉴 키워드 집합} 이 없으면 메뉴 겹침은, hours={id: 이용시간 문장} 이 없으면 칸 시간대 충돌은 보지 않는다."""
+    out, seen, museums, menu_seen = [], set(), 0, []
     limit = config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM)
     days = course.get("days", [])
     want_slots = slots or config.COURSE_SLOTS   # 커피 · 디저트 취향이면 카페 칸이 하나 더 있다(graph/state.py slots_for)
@@ -79,6 +102,15 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
             hit = hits_exclusion(c, exclusions)   # 제외 조건 낱말이 이름 · 소개에 그대로 있는 장소(9단계 i6: 판정이 통과시켜도 여기서 막는다)
             if hit:
                 out.append(_v("excluded", f"{c.get('title')} 은(는) 제외 조건({hit})에 해당합니다. 다른 곳으로 바꾸세요.", cid, d["date"], s["slot"]))
+            # 왜: 한 코스에서 대표메뉴가 같은 식당이 겹치면 식사가 단조롭다. 코스 전체(여러 날)에서 먼저 나온 식당은 두고 뒤에 나온 칸을 위반으로 표시한다. 메뉴를 모르는 식당(키워드 없음)은 겹침으로 단정하지 않는다. 어디: 식당 칸(카페 제외).
+            # 교안: 직접 대응 없음(2026-11-19 T2). theme_repeat 와 같은 칸에 함께 걸려도 위반은 칸당 규칙별 1건이고, 고칠 때는 한 칸을 한 번만 바꾼다. 한계: 키워드 정확 일치라 "물회"와 "마라도물회"는 다른 말로 본다.
+            if menus and s["slot"] in ("점심", "저녁") and c.get("type") in config.FOOD_TYPES and not c.get("is_cafe") and cid not in seen:
+                kw = menus.get(cid) or set()
+                if kw:
+                    same = sorted(kw & set().union(*[k for _, k in menu_seen]))
+                    if same:
+                        out.append(_v("menu_duplicate", f"{c.get('title')} 은(는) 앞 식당과 대표메뉴({', '.join(same)})가 겹칩니다. 다른 메뉴의 식당으로 바꾸세요.", cid, d["date"], s["slot"]))
+                    menu_seen.append((cid, kw))
             if cid in seen:
                 out.append(_v("duplicate", f"{c.get('title')} 이(가) 코스에 두 번 들어 있습니다.", cid, d["date"], s["slot"]))
             seen.add(cid)
@@ -93,6 +125,10 @@ def find_violations(course: dict, cands: dict, dates: list, rechecked: dict, reg
                     out.append(_v("withdrawn", f"{c.get('title')} 은(는) 관광공사 목록에서 내려간 장소입니다.", cid, d["date"], s["slot"]))
                 elif rest_on(r["place"], date.fromisoformat(d["date"])) == "closed":
                     out.append(_v("closed", f"{c.get('title')} 은(는) {_label(d['date'])} 휴무입니다. 다른 장소로 바꾸세요.", cid, d["date"], s["slot"]))
+            # 왜: 칸의 대표 시각이 장소의 개장 · 폐장 · 쉬는 시간 밖이면 하루 시간 배분이 어색하다(오전 칸에 11시 개장). 이용시간을 읽을 수 없으면 위반이 아니다. 어디: 장소 칸 검사 끝.
+            # 교안: 직접 대응 없음(2026-11-19 T4). 휴무일과 같은 정책: 모르는 것을 위반으로 단정하지 않는다. 한계: 요일 · 계절 조건이 붙은 문장은 읽지 않는다(tools/hours.py).
+            if hours and (why := hours_violation(c, s["slot"], hours.get(cid))):
+                out.append(_v("hours_closed", why, cid, d["date"], s["slot"]))
         # 하루 직선거리 합 상한(config.MAX_DAY_KM_BY_REGION). 칸이 아니라 하루 전체의 문제라 slot 은 비워 둔다(칸을 빼거나 바꾸지 않고 다시 쓰게만 한다)
         day_limit, legs = config.MAX_DAY_KM_BY_REGION.get(region), _legs(d["slots"], cands)
         if day_limit and legs and legs[0] > day_limit:
@@ -110,13 +146,13 @@ def _fits(c: dict, slot: str) -> bool:
 
 
 def repair_slots(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None, slots: list | None,
-                 exclusions: list | None, rest_table: dict | None = None) -> tuple:
+                 exclusions: list | None, rest_table: dict | None = None, menus: dict | None = None, hours: dict | None = None) -> tuple:
     """칸 하나의 위반(거리 · 중복 · 휴무 · 내려간 장소 · 제외 · 박물관 수)을 그 날의 규칙을 새로 어기지 않는 가장 가까운 미사용 후보로 바꾼다. (새 코스, [바꾼 칸 {date, slot, old_id, id, rule}])."""
     # 왜: 재작성을 다 쓰고도 위반이 남으면 칸을 비운 코스가 나갔다(제주 3일 6회 중 2회). 서울 3일에서는 중복 1건뿐인 초안이 다시 쓰다가 나빠졌다(2026-11-19). 칸을 비우거나 다시 쓰기 전에 코드가 규칙에 맞는 후보를 찾아 넣는다. 어디: validate_course.
     # 교안: 설계 원칙 "판정은 코드가". 2026-11-17 거리, 2026-11-19 나머지 칸 위반으로 넓힘. 바꿀 후보가 없으면 예전처럼 그 칸을 뺀다.
     rest_table, replaced = rest_table or {}, []
     course = {**course, "days": [{**d, "slots": [dict(s) for s in d["slots"]]} for d in course.get("days", [])]}
-    check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions)
+    check = lambda c: find_violations(c, cands, dates, rechecked, region, slots, exclusions, menus, hours)   # 메뉴 겹침 · 시간대 충돌도 "새 위반 금지"에 들어가 바꿔 넣는 장소가 다른 규칙과 또 겹치지 않는다
     key = lambda v: (v["rule"], v["id"], v["date"], v["slot"])
     for _ in range(sum(len(d["slots"]) for d in course["days"])):   # 한 번에 한 칸씩, 더 고칠 것이 없을 때까지
         done = {(r["date"], r["slot"]) for r in replaced}
@@ -168,10 +204,11 @@ def _legs(slots: list, cands: dict):
     return total, longest
 
 
-def reorder_day(slots: list, cands: dict, limit: float):
+def reorder_day(slots: list, cands: dict, limit: float, hours: dict | None = None):
     """같은 종류 칸(가볼 곳끼리, 점심↔저녁)을 서로 바꿔 하루 이동 거리가 가장 짧은 배치를 고른다. (칸 목록, 바꿨는지)."""
     # 왜: LLM 은 칸 순서를 지리로 고르지 못해 지그재그 동선이 잦았다(평가 코스 36일 중 14~18일이 맞바꿈만으로 10% 이상 단축, 2026-11-17 측정). 거리는 코드가 판정한다. 가볼 곳이 3칸이 되어(2026-11-17) 쌍 맞바꿈이 아니라 가볼 곳 칸 안의 모든 순서를 본다. 어디: validate_course 끝.
     # 교안: 직접 대응 없음. 장소와 이유 문장은 함께 옮기고, 이유에 시간 낱말이 있는 칸은 옮기지 않는다. 구간 상한은 넘기지 않는다.
+    # 시간대(2026-11-19 T4): hours 가 있으면 맞바꿈이 장소를 다른 시간대로 옮기므로, 원래 배치에 없던 칸 시간대 충돌(hours_closed)을 만드는 배치는 고르지 않는다. hours 가 없거나 충돌이 없으면 예전과 같다.
     names = [s["slot"] for s in slots]
     movable = lambda group: [n for n in group if n in names and not any(w in slots[names.index(n)]["reason"] for w in config.REORDER_TIME_WORDS)]
     groups = [g for g in (movable(config.SIGHT_SLOTS), movable(("점심", "저녁"))) if len(g) >= 2]
@@ -179,6 +216,8 @@ def reorder_day(slots: list, cands: dict, limit: float):
     if not groups or base is None:
         return slots, False
     best, best_slots = base, slots
+    clash = lambda ss: {(s["slot"], s["content_id"]) for s in ss if hours and s["content_id"] in cands and hours_violation(cands[s["content_id"]], s["slot"], hours.get(s["content_id"]))}
+    base_clash = clash(slots) if hours else set()
     for perms in itertools.product(*[itertools.permutations(g) for g in groups]):
         trial = [dict(s) for s in slots]
         for group, perm in zip(groups, perms):
@@ -187,7 +226,7 @@ def reorder_day(slots: list, cands: dict, limit: float):
                 for slot_name, value in zip(group, values):
                     trial[names.index(slot_name)][key] = value
         got = _legs(trial, cands)
-        if got and got[0] < best[0] - config.REORDER_MIN_GAIN_KM and got[1] <= max(limit, base[1]):
+        if got and got[0] < best[0] - config.REORDER_MIN_GAIN_KM and got[1] <= max(limit, base[1]) and (not hours or clash(trial) <= base_clash):
             best, best_slots = got, trial
     return best_slots, best_slots is not slots
 
@@ -207,7 +246,14 @@ def validate_update(stored: dict | None, detail, trace):
         need = list(dict.fromkeys(need))
         if need:
             rechecked.update(_recheck(need, stored, detail))
-        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
+        # 왜: 후보(cands)에는 대표메뉴가 없어 저장된 장소(stored)에서 키워드를 가져온다. 수정 턴(mode=edit)은 메뉴 겹침을 보지 않는다: 사용자가 같은 메뉴를 일부러 고를 수 있고, 요청하지 않은 칸을 코드가 바꾸거나 다시 쓰게 하지 않기 위해서다. 어디: 검사 직전.
+        # 교안: 직접 대응 없음(2026-11-19 T2). 메뉴를 모르는 식당은 목록에 넣지 않는다(위반으로 보지 않음).
+        menus = None if state.get("mode") == "edit" else {cid: kw for cid in cands if (kw := place_menu_keywords(stored.get(cid)))}
+        # 왜: 칸 시간대 충돌(hours_closed)도 수정 턴(mode=edit)에서는 보지 않는다. 메뉴 겹침과 같은 이유로, 요청하지 않은 칸을 코드가 바꾸거나 다시 쓰게 하지 않기 위해서다. 어디: 검사 직전.
+        # 교안: 직접 대응 없음(2026-11-19 T4). 이용시간은 휴무와 같이 다시 받은 값이 있으면 그것, 없으면 저장분(hours_of).
+        edit = state.get("mode") == "edit"
+        hours = None if edit else hours_of(cands, stored, rechecked)
+        violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), menus, hours)
 
         # 왜: 휴무 표(5-4)는 저장분 기준이었다. 다시 받은 값으로 코스 장소의 칸을 덮어 써서 다시 쓸 때와 화면 표시가 같은 값을 보게 한다. 어디: rest_table.
         table = {k: dict(v) for k, v in (state.get("rest_table") or {}).items()}
@@ -222,32 +268,39 @@ def validate_update(stored: dict | None, detail, trace):
         fixable = [v for v in violations if v["rule"] in config.REPAIR_RULES and v["slot"]]
         # 수정 턴(mode=edit)은 사용자가 요청한 칸을 코드가 몰래 바꾸지 않도록 재작성을 다 쓴 뒤에만 바꾼다
         early = not exhausted and state.get("mode") != "edit" and 0 < len(fixable) <= config.REPAIR_MAX_SLOTS
+        out["leg_km"] = []   # 지난 턴 · 지난 초안의 이동 거리 기록이 남지 않게 비운다
         out["replaced"] = []   # 지난 턴 · 지난 초안의 교체 기록이 남지 않게 비운다
         if fixable and (exhausted or early):
-            fixed, replaced = repair_slots(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
+            fixed, replaced = repair_slots(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table, menus, hours)
             if replaced:
                 # 바꿔 넣은 장소도 휴무를 다시 받아 검사한다. 걸리면 아래에서 예전처럼 그 칸을 뺀다
                 rechecked.update(_recheck([r["id"] for r in replaced if r["id"] not in rechecked], stored, detail))
                 course, out["rechecked"] = fixed, rechecked
-                violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
+                hours = None if edit else hours_of(cands, stored, rechecked)   # 바꿔 넣은 장소는 방금 다시 받은 이용시간으로 한 번 더 본다
+                violations = find_violations(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), menus, hours)
                 out["violations"] = violations
                 if not violations or exhausted:   # 다시 쓰게 되면 이 코스는 버려지므로 교체 기록도 남기지 않는다
                     out["course"], out["replaced"] = fixed, replaced
         if violations and exhausted:
-            # 취향 음식 반복(theme_repeat)은 규칙 위반이 아니라 쏠림이라, 재작성을 다 써도 칸을 비우지 않는다
-            bad = {(v["date"], v["slot"]) for v in violations if v["slot"] and v["rule"] != "theme_repeat"}
+            # 취향 음식 반복(theme_repeat) · 메뉴 겹침(menu_duplicate)은 규칙 위반이 아니라 쏠림이라, 재작성을 다 써도 칸을 비우지 않는다(config.SOFT_RULES)
+            bad = {(v["date"], v["slot"]) for v in violations if v["slot"] and v["rule"] not in config.SOFT_RULES}
             out["course"] = {**course, "days": [{**d, "slots": [s for s in d["slots"] if (d["date"], s["slot"]) not in bad]} for d in course["days"]]}
-            out["removed"] = [v for v in violations if v["slot"] and v["rule"] != "theme_repeat"]
+            out["removed"] = [v for v in violations if v["slot"] and v["rule"] not in config.SOFT_RULES]
         # 왜: 최종 코스(위반이 없거나 재작성을 다 쓴 뒤)만 칸 순서를 맞바꿔 이동 거리를 줄인다. State 의 코스를 바꿔야 후속 수정이 화면과 같은 순서를 본다. 어디: 위반 처리 직후.
         # 교안: 직접 대응 없음(2026-11-17 결정).
         # 수정 턴(mode=edit)에서는 맞바꾸지 않는다: "점심만 바꿔 줘"에 오전 · 오후 · 저녁 자리까지 움직였다(dev e05, 2026-11-17). 요청한 칸만 바뀌어야 한다
         if (not violations or exhausted) and state.get("mode") != "edit":
             final, limit, moved, days_new = out.get("course", course), config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM), [], []
+            leg_km = out["leg_km"] = []
             for d in final.get("days", []):
-                slots_new, changed = reorder_day(d["slots"], cands, limit)
+                slots_new, changed = reorder_day(d["slots"], cands, limit, hours)
                 days_new.append({**d, "slots": slots_new})
                 if changed:
                     moved.append(d["date"])
+                # 왜: 재배열이 거리를 얼마나 줄였는지 평가가 전 · 후를 비교하려고 날별 직선 합(km)을 남긴다. 어디: 평가 기록(eval/run.py)과 품질 지표(eval/quality.py).
+                # 교안: 직접 대응 없음(2026-11-19 T1). 좌표를 못 구하면 None.
+                before, after = _legs(d["slots"], cands), _legs(slots_new, cands)
+                leg_km.append({"date": d["date"], "before": round(before[0], 2) if before else None, "after": round(after[0], 2) if after else None})
             if final.get("days"):
                 out["course"] = {**{k: v for k, v in final.items() if k != "reordered"}, "days": days_new, **({"reordered": moved} if moved else {})}
         trace.record("validate_course.check", "tool", input={"rechecked_new": len(need), "draft": retries_of(state)["draft"]},
