@@ -449,3 +449,60 @@ def test_위반이_세_칸_이상이면_코드가_바꾸지_않고_다시_쓰게
     h = Harness([bad, good()], {i: ok for i in ("s0", "s1", "s2", "s3", "m0", "m1", "f0", "f1", "f2", "f3")})
     out = h.run()
     assert out["retries"]["draft"] == 2 and out["violations"] == []
+
+
+# --- 잘못된 유형은 삭제 전에 맞는 후보로 교체 (2026-11-20) ---
+def test_재작성_소진시_관광칸의_카페와_식사칸의_카페를_교체한다():
+    from graph.validate import validate_update
+    cafe = place("cafe", "cafe", "음식점", is_cafe=True)
+    cands = [*CANDS, cafe]
+    c = good()
+    c["days"][0]["slots"][2]["content_id"] = "cafe"
+    c["days"][0]["slots"][4]["content_id"] = "cafe"
+    state = {"course": c, "candidates": cands, "retries": {"draft": config.MAX_REDRAFTS + 1},
+             "request": {"region": "강릉", "start_date": D1, "days": 2}, "mode": "new"}
+    out = validate_update({}, None, Trace(save=False))(state)
+    assert not out.get("removed") and not out["violations"]
+    assert [len(d["slots"]) for d in out["course"]["days"]] == [5, 5]
+    assert "cafe" not in [s["content_id"] for d in out["course"]["days"] for s in d["slots"]]
+    assert {r["rule"] for r in out["replaced"]} >= {"slot_type", "cafe_meal"}
+
+
+def test_유형_교체도_휴무와_후보_한계를_지킨다():
+    from graph.validate import validate_update
+    cafe = place("cafe", "cafe", "음식점", is_cafe=True)
+    cands = [*CANDS, cafe]
+    c = good()
+    c["days"][0]["slots"][4]["content_id"] = "cafe"
+    # 사용하지 않은 유일한 식당(f1)이 토요일 휴무면 억지로 채우지 않는다.
+    state = {"course": c, "candidates": cands, "rest_table": {"f1": {D1: "closed"}},
+             "retries": {"draft": config.MAX_REDRAFTS + 1},
+             "request": {"region": "강릉", "start_date": D1, "days": 2}, "mode": "new"}
+    out = validate_update({}, None, Trace(save=False))(state)
+    assert any(r["rule"] == "cafe_meal" for r in out["removed"])
+    assert len(out["course"]["days"][0]["slots"]) == 4
+    assert not out.get("replaced")
+
+
+def test_최종_동선_정렬후_해소된_하루거리_위반은_남기지_않는다(monkeypatch):
+    from graph.validate import validate_update
+    cands = _cands(**GEO)
+    for cid in ("b", "d"):
+        cands[cid].update(type="음식점", kind="food")
+    monkeypatch.setitem(config.MAX_DAY_KM_BY_REGION, "전북", 40)
+    state = {"course": one_day(["a", "b", "c", "x", "d"]), "candidates": list(cands.values()),
+             "retries": {"draft": config.MAX_REDRAFTS + 1},
+             "request": {"region": "전북", "start_date": D1, "days": 1}}
+    out = validate_update({}, None, Trace(save=False))(state)
+    assert out["course"].get("reordered") == [D1]
+    assert not out["violations"] and not out.get("removed")
+
+
+def test_하루거리_위반이_남으면_장소를_빼지_않아도_이유를_알린다():
+    from graph.course import respond_update
+    cands = spread_cands(0.2)
+    state = {"course": one_day(["p0", "q0", "p1", "p2", "q1"]), "candidates": list(cands.values()),
+             "violations": [{"rule": "day_distance", "slot": None, "reason": "하루 직선 이동거리 상한을 넘습니다."}],
+             "request": {"region": "제주", "start_date": D1, "days": 1}}
+    answer = respond_update(state)["answer"]
+    assert "확인 필요: 하루 직선 이동거리 상한을 넘습니다." in answer["notices"]

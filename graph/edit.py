@@ -10,7 +10,7 @@ from graph.course import REASON_RULE, _day_lines, _rest_lines, _view, pack_cours
 from graph.parse import TAG
 from graph.retrieval import _clean
 from graph.schemas import EditedCourse, Route
-from graph.state import retries_of, slots_for
+from graph.state import preserve_unchanged_reasons, retries_of, slots_for
 from tools.places import FIELDS
 
 ROUTE_SYSTEM = """당신은 여행 코스 대화에서 새 문장의 종류를 고르는 도구입니다.
@@ -37,9 +37,9 @@ EDIT_SYSTEM = """당신은 이미 짠 국내 여행 코스를 사용자의 수�
 # 교안: 3일차 05 checkpointer — 같은 thread 의 State 가 다음 호출에 그대로 이어진다.
 RESET_NEW = {"retries": {}, "violations": [], "removed": [], "replaced": [], "course": {}, "course_error": "", "search_error": "", "candidates": [],
              "enough": False, "grade": {}, "weather": {}, "festivals": {}, "rest_table": {}, "answer": {}, "request": {},
-             "edit_note": "", "edit_error": "", "add_terms": [], "add_places": [], "added": [], "query": ""}   # query: 지난 질문의 검색 질의가 새 질문에 남던 버그(2026-11-17)
+             "edit_note": "", "edit_error": "", "add_terms": [], "add_places": [], "added": [], "rewrite_reasons": False, "query": ""}   # query: 지난 질문의 검색 질의가 새 질문에 남던 버그(2026-11-17)
 RESET_EDIT = {"retries": {}, "violations": [], "removed": [], "replaced": [], "course_error": "", "edit_note": "", "edit_error": "",
-              "add_terms": [], "add_places": [], "added": []}
+              "add_terms": [], "add_places": [], "added": [], "rewrite_reasons": False}
 
 
 def route_update(llm, trace):
@@ -65,7 +65,7 @@ def route_update(llm, trace):
         trace.record("route.llm", "llm", input={"chars": len(text)}, output={"mode": mode, "add_terms": len(terms), "add_places": len(names)} if ok else {"error": err}, ok=ok,
                      took_ms=round((time.perf_counter() - t0) * 1000, 2))
         if mode == "edit":
-            return {**RESET_EDIT, "mode": mode, "add_terms": terms, "add_places": names, "pending_request": {}}
+            return {**RESET_EDIT, "mode": mode, "add_terms": terms, "add_places": names, "pending_request": {}, "rewrite_reasons": got.rewrite_reasons}
         return {**RESET_NEW, "mode": mode, "pending_request": {}}
     return update
 
@@ -208,7 +208,8 @@ def edit_update(llm, trace):
         out = {"retries": {**retries, "draft": retries["draft"] + 1}}
         if not ok:
             return {**out, "edit_error": err, "violations": []}
-        out["course"] = pack_course(got, indoor, cafes)
+        out["course"] = pack_course(got, indoor, cafes, candidates=cands)
+        out["course"] = preserve_unchanged_reasons(course, out["course"], state.get("rewrite_reasons", False))
         out["edit_note"] = " ".join(x for x in (state.get("edit_note"), _clean(got.note)) if x)[:200]   # 추가 단계에서 못 찾은 것 + 고치면서 못 한 것
         return out
     return update

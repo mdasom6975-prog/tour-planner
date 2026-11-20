@@ -11,7 +11,7 @@ import config
 from graph.context import _label
 from graph.retrieval import _clean
 from graph.schemas import Course
-from graph.state import retries_of, slots_for, wants_cafe, zone_labels
+from graph.state import normalize_course_ids, retries_of, slots_for, wants_cafe, zone_labels
 from tools.geo import distance_km
 
 # 왜: 이유 문장에 8 ~ 13km 떨어진 곳을 "가깝다 · 이동이 짧다"고 쓰거나 후보에 없는 장소 이름을 덧붙였다(8-4 근거성 채점, 근거 없음의 대부분). 거리는 코드가 계산해 화면에 따로 보여 주므로 이유에서는 빼게 한다. 어디: 코스 작성 · 수정 지시문.
@@ -44,8 +44,9 @@ def _view(c: dict, zone: str | None = None) -> str:
     pet = f' | 반려동물: {c["pet"].get("범위")}' if c.get("pet") and c["pet"].get("범위") else ""
     museum = " | [박물관류]" if c.get("category") == config.MUSEUM_CLASS else ""
     theme = " | [취향 음식]" if c.get("theme") else ""   # 검색에서 취향 질의로만 잡힌 식당(graph/retrieval.py). 하루 1곳까지만 쓴다
+    cafe = " | [카페: 식사·관광 칸에 넣지 않음]" if c.get("is_cafe") else ""
     where = f" | [구역 {zone}]" if zone else ""   # 코드가 좌표로 묶은 구역(graph/state.py zone_labels)
-    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum}{theme}{where} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
+    return _clean(f'id={c["id"]} | {c.get("type")} | {c.get("title")}{museum}{theme}{cafe}{where} | {c.get("addr")}{pet} | {c.get("snippet", "")}')
 
 
 def _day_lines(dates: list, weather: dict, outdoor: bool = False) -> list:
@@ -83,8 +84,10 @@ def safe_reason(text) -> str:
     return config.REASON_REMOVED_TEXT if BLOCKED.search(cleaned) else cleaned
 
 
-def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
+def pack_course(got: Course, indoor: list, cafes: list | None = None, *, candidates: list | None = None) -> dict:
     """LLM 이 낸 Course 를 State 에 넣을 dict 로 정리한다. 부가 코스 · 카페 추천은 후보 밖 · 본 코스와 겹치는 id 를 코드가 버린다."""
+    normalized, resolved = normalize_course_ids(got.model_dump(), candidates if candidates is not None else [*indoor, *(cafes or [])])
+    got = Course.model_validate(normalized)
     used = {s.content_id for d in got.days for s in d.slots}
     # 왜: 카페 추천은 "카페 후보 안에서만 · 본 코스와 겹치지 않게 · 정해진 수만" 코드가 다시 거른다. 어디: LLM 결과 정리.
     # 교안: 직접 대응 없음(2026-11-13 결정: 카페는 점심 · 저녁 칸이 아니라 따로 추천).
@@ -112,6 +115,8 @@ def pack_course(got: Course, indoor: list, cafes: list | None = None) -> dict:
     course = {"days": [{"date": d.date, "slots": [{"slot": s.slot, "content_id": s.content_id, "reason": safe_reason(s.reason)}
                                                   for s in d.slots]} for d in got.days],
               "rain_reason": safe_reason(got.rain_reason), "backup": backup, "cafes": picked}
+    if resolved:
+        course["resolved_ids"] = resolved
     return course
 
 
@@ -152,7 +157,7 @@ def draft_update(llm, trace):
             ok, err = True, ""
         except Exception as e:   # 쓰지 못하면 빈 코스로 두고 respond 가 사실대로 알린다(지어내지 않는다)
             got, ok, err = Course(), False, type(e).__name__
-        course = pack_course(got, indoor, cafes)
+        course = pack_course(got, indoor, cafes, candidates=cands)
         backup = course["backup"]
         trace.record("draft_course.llm", "llm", input={"candidates": len(cands), "violations": len(bad)},
                      output={"days": len(course["days"]), "backup": len(backup)} if ok else {"error": err}, ok=ok,
@@ -346,6 +351,11 @@ def respond_update(state) -> dict:
     for v in state.get("removed") or []:
         name = (cands.get(v["id"]) or {}).get("title") or v["id"]
         notices.append(f"확인 필요: {_label(v['date'])} {v['slot']} {name} — 규칙에 맞지 않아 뺐습니다({v['rule']}).")
+    # 왜: 하루 전체 거리처럼 칸을 제거하지 않는 위반도 사용자에게 사유를 알려야 한다. 어디: 최종 안내.
+    # 교안: PRD F3 확인 필요 표시. 개별 장소 제거 안내와 겹치지 않게 날짜·하루 수준 위반만 붙인다.
+    for v in state.get("violations") or []:
+        if not v.get("slot"):
+            notices.append(f"확인 필요: {v['reason']}")
     if notices:
         lines += ["", *[f"- {n}" for n in notices]]
     return {"answer": {"kind": "course", "text": "\n".join(lines), "days": days_out, "backup": backup_out, "cafes": cafes_out, "notices": notices,

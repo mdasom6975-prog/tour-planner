@@ -10,7 +10,7 @@ from datetime import date
 
 import config
 from graph.context import _label, trip_dates
-from graph.state import hits_exclusion, retries_of, slots_for
+from graph.state import hits_exclusion, normalize_course_ids, retries_of, slots_for
 from tools.geo import distance_km
 from tools.rest import rest_on
 
@@ -152,6 +152,63 @@ def repair_slots(course: dict, cands: dict, dates: list, rechecked: dict, region
     return course, replaced
 
 
+def repair_day_distance(course: dict, cands: dict, dates: list, rechecked: dict, region: str | None,
+                        slots: list, exclusions: list | None, rest_table: dict | None = None) -> tuple:
+    """거리 초과일만 완성된 적합 동선으로 바꾼다. 제한 탐색 실패 시 기존 코스를 유지한다."""
+    limit = config.MAX_DAY_KM_BY_REGION.get(region)
+    if not limit:
+        return course, []
+    check = lambda value: find_violations(value, cands, dates, rechecked, region, slots, exclusions)
+    changes = []
+    for day_index, day in enumerate(course.get("days", [])):
+        if not any(v["rule"] == "day_distance" and v["date"] == day["date"] for v in check(course)):
+            continue
+        if [s["slot"] for s in day["slots"]] != slots:
+            continue
+        ordered, moved = reorder_day(day["slots"], cands, config.MAX_LEG_KM_BY_REGION.get(region, config.MAX_LEG_KM))
+        if moved:
+            trial = {**course, "days": [{**d, "slots": ordered} if n == day_index else d for n, d in enumerate(course["days"])]}
+            if not any(v["date"] == day["date"] for v in check(trial)):
+                course = {**trial, "reordered": list(dict.fromkeys([*course.get("reordered", []), day["date"]]))}
+                continue
+        reserved = {s["content_id"] for n, d in enumerate(course["days"]) if n != day_index for s in d["slots"]}
+        reserved.update(s["content_id"] for key in ("backup", "cafes") for s in course.get(key, []))
+        baseline = {(v["rule"], v["id"], v["date"], v["slot"]) for v in check(course) if v["date"] != day["date"]}
+        beam = [(0, 0.0, [])]
+        for original in day["slots"]:
+            groups = {}
+            for count, _, path in beam:
+                used = reserved | {s["content_id"] for s in path}
+                for cid, candidate in cands.items():
+                    if cid in used or not _fits(candidate, original["slot"]) or (rest_table or {}).get(cid, {}).get(day["date"]) == "closed":
+                        continue
+                    same = cid == original["content_id"]
+                    route = [*path, {**original, "content_id": cid, "reason": original["reason"] if same else config.REPLACED_REASON}]
+                    legs = _legs(route, cands)
+                    if legs is None or legs[0] > limit:
+                        continue
+                    trial = {**course, "days": [{**d, "slots": route} if n == day_index else d for n, d in enumerate(course["days"])]}
+                    violations = check(trial)
+                    if any(v["rule"] != "slots" and (v["rule"], v["id"], v["date"], v["slot"]) not in baseline for v in violations):
+                        continue
+                    groups.setdefault(count + (not same), []).append((count + (not same), legs[0], route))
+            # 왜: 같은 변경 수 안에서 짧은 경로만 남겨 탐색량을 제한한다. 어디: 최종 하루 거리 보정.
+            # 교안: 직접 대응 없음. 전역 최적해 보장은 없고 완성된 규칙 통과 동선만 적용한다.
+            beam = [item for group in groups.values() for item in sorted(group, key=lambda x: (x[1], tuple(s["content_id"] for s in x[2])))[:config.DAY_REPAIR_BEAM_WIDTH]]
+            if not beam:
+                break
+        if not beam:
+            continue
+        _, _, route = min(beam, key=lambda x: (x[0], x[1], tuple(s["content_id"] for s in x[2])))
+        trial = {**course, "days": [{**d, "slots": route} if n == day_index else d for n, d in enumerate(course["days"])]}
+        if any((v["rule"], v["id"], v["date"], v["slot"]) not in baseline for v in check(trial)):
+            continue
+        changes.extend({"date": day["date"], "slot": old["slot"], "old_id": old["content_id"], "id": new["content_id"], "rule": "day_distance"}
+                       for old, new in zip(day["slots"], route) if old["content_id"] != new["content_id"])
+        course = trial
+    return course, changes
+
+
 def _legs(slots: list, cands: dict):
     """연속한 칸 사이 직선거리의 (합, 가장 긴 구간). 좌표를 못 구하면 None."""
     total, longest, prev = 0.0, 0.0, None
@@ -198,6 +255,9 @@ def validate_update(stored: dict | None, detail, trace):
     def update(state) -> dict:
         t0 = time.perf_counter()
         course, cands = state.get("course") or {}, {c["id"]: c for c in state.get("candidates", [])}
+        course, resolved = normalize_course_ids(course, list(cands.values()))
+        if resolved:
+            course["resolved_ids"] = [*course.get("resolved_ids", []), *resolved]
         req = state.get("request", {})
         dates = trip_dates(req["start_date"], req["days"]) if req.get("start_date") and req.get("days") else []
         # 왜: 휴무 판정은 최종 코스의 장소만 관광공사에서 다시 받은 값으로 한다. 이미 받은 장소는 다시 받지 않는다(재작성 반복에서 한도를 아낀다). 어디: 검사 직전.
@@ -215,6 +275,8 @@ def validate_update(stored: dict | None, detail, trace):
             row = {day: r for day in dates if (r := rest_on(rechecked[cid]["place"], date.fromisoformat(day))) != "open"}
             table[cid] = row
         out = {"rechecked": rechecked, "rest_table": table, "violations": violations}
+        if resolved:
+            out["course"] = course
 
         # 왜: 두 번 고쳐도 남은 위반은 그 장소를 빼고 "확인 필요"로 알린다(없는 장소 · 규칙 위반 장소를 코스에 남기지 않는다). 어디: 재작성 횟수를 다 쓴 뒤.
         # 교안: PRD 10번 "위반 & 재작성 = 2 → 위반 장소 제거 + '확인 필요' 표시".
@@ -233,6 +295,20 @@ def validate_update(stored: dict | None, detail, trace):
                 out["violations"] = violations
                 if not violations or exhausted:   # 다시 쓰게 되면 이 코스는 버려지므로 교체 기록도 남기지 않는다
                     out["course"], out["replaced"] = fixed, replaced
+        if exhausted and state.get("mode") != "edit" and any(v["rule"] == "day_distance" for v in violations):
+            fixed, changed = repair_day_distance(course, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"), table)
+            if fixed is not course:
+                new_ids = list(dict.fromkeys(r["id"] for r in changed if r["id"] not in rechecked))
+                rechecked.update(_recheck(new_ids, stored, detail))
+                for cid in new_ids:
+                    table[cid] = {day: r for day in dates if (r := rest_on(rechecked[cid]["place"], date.fromisoformat(day))) != "open"}
+                checked = find_violations(fixed, cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
+                before = {(v["rule"], v["id"], v["date"], v["slot"]) for v in violations}
+                if not any((v["rule"], v["id"], v["date"], v["slot"]) not in before for v in checked):
+                    course, violations = fixed, checked
+                    out["course"], out["violations"] = fixed, checked
+                    out["replaced"].extend(changed)
+                out["rechecked"] = rechecked
         if violations and exhausted:
             # 취향 음식 반복(theme_repeat)은 규칙 위반이 아니라 쏠림이라, 재작성을 다 써도 칸을 비우지 않는다
             bad = {(v["date"], v["slot"]) for v in violations if v["slot"] and v["rule"] != "theme_repeat"}
@@ -242,14 +318,20 @@ def validate_update(stored: dict | None, detail, trace):
         # 교안: 직접 대응 없음(2026-11-17 결정).
         # 수정 턴(mode=edit)에서는 맞바꾸지 않는다: "점심만 바꿔 줘"에 오전 · 오후 · 저녁 자리까지 움직였다(dev e05, 2026-11-17). 요청한 칸만 바뀌어야 한다
         if (not violations or exhausted) and state.get("mode") != "edit":
-            final, limit, moved, days_new = out.get("course", course), config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM), [], []
+            final, limit, days_new = out.get("course", course), config.MAX_LEG_KM_BY_REGION.get(req.get("region"), config.MAX_LEG_KM), []
+            moved = list(final.get("reordered", []))
             for d in final.get("days", []):
                 slots_new, changed = reorder_day(d["slots"], cands, limit)
                 days_new.append({**d, "slots": slots_new})
-                if changed:
+                if changed and d["date"] not in moved:
                     moved.append(d["date"])
             if final.get("days"):
                 out["course"] = {**{k: v for k, v in final.items() if k != "reordered"}, "days": days_new, **({"reordered": moved} if moved else {})}
+                # 왜: 맞바꿈 전 하루 거리 위반이 최종 화면에 남지 않도록 실제 최종 동선을 다시 검사한다. 어디: 칸을 제거하지 않은 최종 코스.
+                # 교안: 설계 원칙 "판정은 코드가". 제거한 칸은 원래 위반 사유를 유지한다.
+                if not out.get("removed"):
+                    violations = find_violations(out["course"], cands, dates, rechecked, req.get("region"), slots_for(req, list(cands.values())), req.get("exclusions"))
+                    out["violations"] = violations
         trace.record("validate_course.check", "tool", input={"rechecked_new": len(need), "draft": retries_of(state)["draft"]},
                      output={"violations": [v["rule"] for v in violations], "removed": len(out.get("removed", []))}, ok=not violations,
                      took_ms=round((time.perf_counter() - t0) * 1000, 2))

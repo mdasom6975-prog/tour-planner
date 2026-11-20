@@ -163,3 +163,30 @@ def test_추가_요청이_없으면_찾기_없이_지나간다():
     f = Fake(edits=[swap_lunch("f4")])
     path, _ = run(f, search=lambda *a, **k: called.append(1) or {"ok": True, "results": []})
     assert "add_candidates" in path and not called
+
+
+def test_장소가_같은_다른_칸의_이유는_모델이_바꿔도_원문을_유지한다():
+    changed = swap_lunch('f4')
+    changed['days'][0]['slots'][1]['reason'] = '새 점심 이유'
+    changed['days'][1]['slots'][-1]['reason'] = '요청하지 않은 문장 변경'
+    _, out = run(Fake(edits=[changed]), message='첫째 날 점심만 다른 식당으로 바꿔 줘')
+    assert out['course']['days'][0]['slots'][1]['reason'] == '새 점심 이유'
+    assert out['course']['days'][1]['slots'][-1]['reason'] == OLD['days'][1]['slots'][-1]['reason']
+
+
+def test_이유_문장_자체의_명시적인_수정은_허용하고_다음_턴에는_권한을_초기화한다():
+    from graph.edit import edit_update, route_update
+    from graph.state import preserve_unchanged_reasons
+    from copy import deepcopy
+    edited = deepcopy(OLD)
+    edited['days'][0]['slots'][0]['reason'] = '더 자세한 설명'
+    original = deepcopy(OLD)
+    assert preserve_unchanged_reasons(OLD, edited)['days'][0]['slots'][0]['reason'] == OLD['days'][0]['slots'][0]['reason']
+    assert preserve_unchanged_reasons(OLD, edited, True)['days'][0]['slots'][0]['reason'] == '더 자세한 설명'
+    assert OLD == original
+    route = route_update(lambda *args: {'mode': 'edit', 'rewrite_reasons': True}, Trace(save=False))(PREV)
+    assert route['rewrite_reasons'] is True
+    route = route_update(lambda *args: {'mode': 'edit'}, Trace(save=False))({**PREV, 'rewrite_reasons': True})
+    assert route['rewrite_reasons'] is False
+    result = edit_update(lambda *args: edited, Trace(save=False))({**PREV, 'rewrite_reasons': True})
+    assert result['course']['days'][0]['slots'][0]['reason'] == '더 자세한 설명'

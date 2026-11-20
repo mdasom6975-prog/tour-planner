@@ -27,7 +27,7 @@ class NewQuery(BaseModel):
 
 class Slot(BaseModel):
     slot: Literal["오전", "점심", "카페", "오후", "늦은 오후", "저녁"] = Field(description="하루 칸. 오전·오후·늦은 오후는 가볼 곳, 점심·저녁은 음식점, 카페는 '하루 칸'에 있을 때만")
-    content_id: str = Field(description="후보 장소의 id 를 그대로")
+    content_id: str = Field(description="후보 장소의 id 문자열을 그대로. 장소 이름(title)을 넣지 않는다")
     reason: str = Field(description="이 장소를 이 자리에 넣은 이유 한 문장")
 
 
@@ -54,6 +54,7 @@ class Course(BaseModel):
 
 
 class Route(BaseModel):
+    rewrite_reasons: bool = Field(False, description="사용자가 추천 이유·설명 문장 자체를 다시 쓰라고 명시한 경우만 true. 장소나 일정만 변경하는 요청은 false")
     mode: Literal["new", "edit"] = Field(description="지금 문장이 이미 나온 코스를 고치거나 더하는 말이면 edit, 새 여행 요청이면 new")
     add_preferences: list[str] = Field(default_factory=list, description="edit 일 때, 코스에 더 넣고 싶다고 한 취향 · 테마 낱말(예: 산, 바다, 흑돼지). 없으면 빈 목록")
     add_places: list[str] = Field(default_factory=list, description="edit 일 때, 이름을 말하며 넣어 달라고 한 장소 이름(예: 성산일출봉). 없으면 빈 목록")

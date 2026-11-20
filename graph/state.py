@@ -31,10 +31,51 @@ class State(TypedDict, total=False):
     added: list          # add_candidates 가 이번 턴에 후보에 더한 장소 id
     edit_note: str       # edit_course 가 후보에 없어 반영하지 못한 부분(없으면 빈 문자열)
     edit_error: str      # edit_course 의 LLM 호출이 실패했을 때의 오류 이름(이전 코스를 그대로 둔다)
+    rewrite_reasons: bool    # 사용자가 추천 이유 문장 자체의 수정을 요청했는가
     answer: dict         # 끝에 나가는 값: 되묻기 · 찾지 못함 · 코스
     # 왜: 노드마다 한 줄씩 덧붙여야 해서 합치는 방식(덧붙이기)을 정한다. 어디: 실행 기록 줄 목록.
     # 교안: 3일차 05 State 의 reducer — 같은 칸에 여러 노드가 쓸 때 어떻게 합칠지 지정한다.
     trace: Annotated[list, operator.add]
+
+
+def normalize_course_ids(course: dict, candidates: list) -> tuple:
+    """현재 후보의 유일한 정확한 이름만 ID로 복원한다. 모호하거나 없는 이름은 검증기가 거른다."""
+    ids = {c["id"] for c in candidates}
+    titles = {}
+    for c in candidates:
+        title = (c.get("title") or "").strip()
+        if title:
+            titles.setdefault(title, set()).add(c["id"])
+    changed = []
+
+    def resolve(slot):
+        old = slot.get("content_id")
+        matches = titles.get(str(old).strip(), set())
+        if old not in ids and len(matches) == 1:
+            cid = next(iter(matches))
+            changed.append({"from": old, "id": cid})
+            return {**slot, "content_id": cid}
+        return dict(slot)
+
+    return {**course,
+            "days": [{**d, "slots": [resolve(s) for s in d["slots"]]} for d in course.get("days", [])],
+            "backup": [resolve(s) for s in course.get("backup", [])],
+            "cafes": [resolve(s) for s in course.get("cafes", [])]}, changed
+
+
+def preserve_unchanged_reasons(previous: dict, edited: dict, rewrite_reasons: bool = False) -> dict:
+    """동일한 날짜·칸·장소의 이유는 원문을 유지한다. 명시적인 이유 수정 요청은 허용한다."""
+    if rewrite_reasons:
+        return edited
+    before = {(d["date"], s["slot"], s["content_id"]): s for d in previous.get("days", []) for s in d["slots"]}
+    days = []
+    for day in edited.get("days", []):
+        slots = []
+        for slot in day["slots"]:
+            old = before.get((day["date"], slot["slot"], slot["content_id"]))
+            slots.append({**slot, "reason": old["reason"]} if old else dict(slot))
+        days.append({**day, "slots": slots})
+    return {**edited, "days": days}
 
 
 def _point(c: dict):
