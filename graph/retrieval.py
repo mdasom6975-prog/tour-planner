@@ -10,6 +10,7 @@ import config
 from graph.schemas import Grade, NewQuery
 from graph.state import hits_exclusion, retries_of
 from harness.trace import Trace
+from tools.conditions import access_brief, pet_label, request_texts_of, request_wants
 
 KINDS = {"sight": config.SIGHT_TYPES, "food": config.FOOD_TYPES}
 # 왜: 비 · 눈이 올 때 갈 실내 후보(부가 코스)는 취향 검색에 잘 잡히지 않아(강릉 "바다 산책" 20곳 중 문화시설 0곳) 문화시설만 따로 한 번 더 찾는다(2026-11-13 결정). 어디: retrieve.
@@ -25,6 +26,7 @@ GRADE_SYSTEM = """당신은 여행 후보 장소가 사용자 조건에 맞는�
 - 제외 조건에 해당하는 후보는 뺍니다. 취향과 어긋나는 후보도 뺍니다.
 - 조건은 둘로 나뉘어 옵니다. 둘째 칸이 sight · indoor 인 후보는 "가볼 곳 조건"으로, food · cafe 인 후보(음식점 · 카페)는 "음식점 조건"으로만 판정합니다.
 - 음식점 조건에는 취향이 없습니다. 음식점 · 카페는 제외 조건(못 먹는 것 · 빼 달라는 것)과 동행에 어긋나는 곳만 빼고 나머지는 모두 통과시킵니다.
+- 요청에 휠체어 · 무장애 · 유모차 · 반려동물 같은 조건이 있고 후보 줄에 그 정보(반려동물 · 무장애)가 있으면 그 후보를 통과시킵니다. 정보가 없다는 이유만으로 탈락시키지 않습니다.
 - 판단할 근거가 소개글에 없으면 장소 이름과 분류만 보고, 지어내지 않습니다.
 - reason 에는 부족한 점(예: 해산물이 아닌 식당이 없음)을 한 문장으로 적습니다.
 - 박물관 · 미술관 · 전시관은 코스에 1곳만 들어갑니다. 취향이 박물관 · 미술관이어도 전시 · 예술 · 문화 공간과 근처의 다른 볼거리를 함께 통과시킵니다.
@@ -74,10 +76,14 @@ def retrieve_update(search, areas: dict | None = None):
         # 교안: 직접 대응 없음(2026-11-17 결정).
         sight_query = query if state.get("query") else build_query(req, food=False)
         area, notes = _area_for(req, areas)
+        # 왜: 요청에 무장애 · 반려동물 낱말이 있을 때만 그 조건이 긍정으로 저장된 장소를 검색 순위에서 앞으로 올린다(거르지 않는다). 낱말이 없으면 search 에 아무것도 더 넘기지 않아 예전과 똑같다. 어디: 종류별 검색(음식점 · 가볼 곳 · 실내).
+        # 교안: 직접 대응 없음(2026-11-19 T3). 가중 자체는 tools/places.py search_places 가 한다.
+        wants = request_wants(request_texts_of(state.get("message"), req))
+        boost_args = {"prefer": wants} if any(wants.values()) else {}
         found = {c["id"]: c for c in state.get("candidates", [])}   # 앞선 판정을 통과한 후보는 유지한다
         error = None
         for kind, types in SEARCH_KINDS.items():
-            got = search(query if kind == "food" else sight_query, region=req.get("region"), types=types, area=area)
+            got = search(query if kind == "food" else sight_query, region=req.get("region"), types=types, area=area, **boost_args)
             if not got.get("ok"):
                 error = got.get("reason", "검색 실패")
                 continue
@@ -131,8 +137,11 @@ def retrieve_update(search, areas: dict | None = None):
 
 def _view(c: dict) -> str:
     # 왜: 소개글에 닫는 태그가 들어 있으면 지시문 영역으로 빠져나올 수 있어 태그 글자를 지운다. 어디: LLM 에 보내는 후보 한 줄.
-    # 교안: PRD 11번 간접 인젝션 — 외부 문장은 태그 안에서만 정보로 읽힌다.
-    return _clean(f'id={c["id"]} | {c["kind"]} | {c.get("title")} | {c.get("type")} | {c.get("addr")} | {c.get("snippet", "")}')
+    # 교안: PRD 11번 간접 인젝션 — 외부 문장은 태그 안에서만 정보로 읽힌다. 반려동물 · 무장애는 저장된 원문을 짧게(config.GRADE_COND_CHARS) 옮기고 정보가 없으면 칸을 넣지 않는다(2026-11-19 T5: 판정이 조건 정보를 보게).
+    n = config.GRADE_COND_CHARS
+    pet = f" | 반려동물: {t[:n]}" if (t := pet_label(c)) else ""
+    access = f" | 무장애: {t[:n]}{'…' if len(t) > n else ''}" if (t := access_brief(c.get("access"))) else ""
+    return _clean(f'id={c["id"]} | {c["kind"]} | {c.get("title")} | {c.get("type")} | {c.get("addr")}{pet}{access} | {c.get("snippet", "")}')
 
 
 def _wants_museum(req: dict) -> bool:

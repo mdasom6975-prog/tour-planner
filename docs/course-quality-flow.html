@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>코스 품질 개선 작업 흐름</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1c2330; --sub: #5b6678; --line: #d5dae3;
+    --a: #2f6fed; --a-bg: #e8f0ff;   /* 기반 */
+    --b: #0f8a6a; --b-bg: #e3f6ef;   /* 코드 */
+    --c: #b25e00; --c-bg: #fff1dc;   /* 지시문 */
+    --d: #7a3fd1; --d-bg: #f0e8fc;   /* 검증 */
+    --arrow: #8a94a6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12161d; --card: #1b212b; --ink: #e8ecf3; --sub: #9aa5b8; --line: #2e3745;
+      --a: #7aa2ff; --a-bg: #1d2a47; --b: #4fd1a5; --b-bg: #12332a;
+      --c: #ffb259; --c-bg: #3a2a12; --d: #b99aff; --d-bg: #2a2040; --arrow: #6b7688;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 16px 56px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: var(--sub); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 22px; font-size: 13px; color: var(--sub); }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; background: var(--k); }
+  .note { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--c);
+          border-radius: 8px; padding: 10px 14px; margin-bottom: 24px; font-size: 13.5px; }
+  #board { position: relative; }
+  svg#wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .phase { margin-bottom: 34px; position: relative; z-index: 1; }
+  .phase > h2 { font-size: 13px; letter-spacing: .04em; color: var(--sub); margin: 0 0 10px; font-weight: 600; }
+  .row { display: grid; gap: 16px; }
+  .row.c1 { grid-template-columns: 1fr; }
+  .row.c3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 860px) { .row.c3 { grid-template-columns: 1fr; } }
+  .task { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--k);
+          border-radius: 10px; padding: 14px 16px; }
+  .task header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .id { font-weight: 700; font-size: 12px; color: var(--k); background: var(--kb); padding: 2px 8px; border-radius: 999px; }
+  .task h3 { margin: 0; font-size: 16px; }
+  .dep { font-size: 12px; color: var(--sub); margin-left: auto; }
+  dl { margin: 0; }
+  dt { font-size: 12px; font-weight: 700; color: var(--k); margin-top: 9px; }
+  dd { margin: 2px 0 0; font-size: 13.5px; }
+  dd ul { margin: 2px 0 0; padding-left: 18px; }
+  .k-a { --k: var(--a); --kb: var(--a-bg); } .k-b { --k: var(--b); --kb: var(--b-bg); }
+  .k-c { --k: var(--c); --kb: var(--c-bg); } .k-d { --k: var(--d); --kb: var(--d-bg); }
+  .legend .k-a, .legend .k-b, .legend .k-c, .legend .k-d { --k: inherit; }
+  .legend .la { --k: var(--a); } .legend .lb { --k: var(--b); } .legend .lc { --k: var(--c); } .legend .ld { --k: var(--d); }
+  .rules { margin-top: 8px; font-size: 13px; color: var(--sub); }
+  .rules b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>코스 품질 개선 작업 흐름</h1>
+  <p class="lead">스펙(docs/SPEC-course-quality.md)과 dev 브랜치 코드 조사 결과를 바탕으로 나눈 단위 작업 6개. 화살표는 "앞 작업이 끝나야 시작할 수 있음"입니다.</p>
+  <div class="legend">
+    <span class="la">기반·측정</span><span class="lb">코드 변경</span><span class="lc">지시문 변경</span><span class="ld">검증</span>
+  </div>
+  <div class="note"><b>전제:</b> 모든 작업은 코스 생성 코드가 있는 <b>dev 브랜치 기준</b>입니다(현재 워크트리에는 없음, 기준 브랜치 확정 필요). 코스 규칙 위반 0건 합격선은 모든 작업에서 유지하고, 확인은 dev 문항만 씁니다.</div>
+
+  <div id="board">
+    <svg id="wires"></svg>
+
+    <section class="phase">
+      <h2>1단계 · 기준선</h2>
+      <div class="row c1">
+        <article class="task k-a" id="T1">
+          <header><span class="id">T1</span><h3>품질 지표 만들기 + 현재 기준선 측정</h3><span class="dep">선행 없음</span></header>
+          <dl>
+            <dt>목표</dt><dd>고치기 전 숫자를 먼저 잡는다. 동선 총거리, 하루 시간 배분, 식당 메뉴 중복 수, 요청 반영(무장애·반려동물·동행)을 코드로 잰다.</dd>
+            <dt>작업 방식</dt><dd>순수 함수로 지표 계산을 추가하고 <code>eval/score.py</code> 결과표에 열을 더한다. 재배열 전후 거리는 <code>reorder_day</code> 입출력으로 비교한다. 기준값은 config.py에 둔다.</dd>
+            <dt>검증 방식</dt><dd>지표 함수 단위 테스트(<code>pytest</code>) + dev 문항으로 현재 코드의 기준선 값을 결과표에 기록.</dd>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>2단계 · 코드 변경 (서로 독립, 병렬 가능)</h2>
+      <div class="row c3">
+        <article class="task k-b" id="T2">
+          <header><span class="id">T2</span><h3>메뉴 중복 판정 + 검증 규칙</h3><span class="dep">선행: T1</span></header>
+          <dl>
+            <dt>목표</dt><dd>한 코스에서 대표메뉴 키워드가 같은 식당이 겹치면 코드가 위반으로 잡고 바꾼다.</dd>
+            <dt>작업 방식</dt><dd>
+              <ul>
+                <li><code>menu_main</code>에서 키워드 추출 함수 작성</li>
+                <li><code>validate.py</code>에 menu_duplicate 규칙 추가, <code>repair_slots</code>가 바꾸도록 REPAIR_RULES에 연결</li>
+                <li>기존 theme_repeat와 겹치지 않게 정리</li>
+              </ul></dd>
+            <dt>검증 방식</dt><dd>중복 있는/없는 코스 단위 테스트, repair 후 메뉴 중복 0건, 규칙 위반 0건 유지.</dd>
+          </dl>
+        </article>
+
+        <article class="task k-b" id="T3">
+          <header><span class="id">T3</span><h3>요청 반영: 후보에 조건 정보 노출</h3><span class="dep">선행: T1</span></header>
+          <dl>
+            <dt>목표</dt><dd>코스를 고르는 단계에서 무장애·반려동물·동행 조건이 실제로 반영되게 한다.</dd>
+            <dt>작업 방식</dt><dd>
+              <ul>
+                <li>후보 줄에 무장애 요약과 메뉴를 추가(원문 값만, 새로 만들지 않음)</li>
+                <li>조건 질문일 때 검색 후보 순위에 조건 해당 장소 가중</li>
+                <li>"필수 조건으로 거르기"는 범위 밖이므로 하지 않음</li>
+              </ul></dd>
+            <dt>검증 방식</dt><dd>후보 줄 형식 단위 테스트, dev의 해당 문항(c07 등)에서 요청 반영 지표 변화 확인.</dd>
+          </dl>
+        </article>
+
+        <article class="task k-b" id="T4">
+          <header><span class="id">T4</span><h3>하루 시간 배분을 코드가 확정</h3><span class="dep">선행: T1</span></header>
+          <dl>
+            <dt>목표</dt><dd>이용시간과 칸 구성을 기준으로 하루 분량·시간 배분이 어색한 코스를 코드가 가려내거나 조정한다.</dd>
+            <dt>작업 방식</dt><dd>이용시간 문장(<code>hours_text</code>)에서 코드로 읽히는 것만 파싱해 검증 규칙으로 추가. 읽을 수 없으면 "확인 필요"로 둔다(휴무일과 같은 방식). 기준값은 config.py.</dd>
+            <dt>검증 방식</dt><dd>파싱 단위 테스트, 시간 배분 지표 전후 비교. 합격 기준값은 T1 기준선을 보고 정해 사용자에게 확인.</dd>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>3단계 · 지시문 보강</h2>
+      <div class="row c1">
+        <article class="task k-c" id="T5">
+          <header><span class="id">T5</span><h3>지시문에 동선·메뉴 다양성·요청 반영 규칙 보강</h3><span class="dep">선행: T2 · T3 · T4</span></header>
+          <dl>
+            <dt>목표</dt><dd>코드가 새로 판정하는 규칙을 LLM이 처음부터 지키게 해 재작성·교체 횟수를 줄인다.</dd>
+            <dt>작업 방식</dt><dd><code>DRAFT_SYSTEM</code>에 규칙을 추가한다. Claude와 OpenAI가 같은 지시문을 받으며 한쪽 전용 문구는 만들지 않는다. 평가 문장은 퓨샷 예시에 넣지 않는다.</dd>
+            <dt>검증 방식</dt><dd>지시문 변경 전후를 dev 문항으로 같은 조건에서 비교(재작성 횟수, 지표 변화). 코드 규칙이 먼저 들어간 뒤라 효과를 분리해서 볼 수 있다.</dd>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="phase">
+      <h2>4단계 · 최종 검증</h2>
+      <div class="row c1">
+        <article class="task k-d" id="T6">
+          <header><span class="id">T6</span><h3>dev 평가 재측정과 회귀 확인</h3><span class="dep">선행: T5</span></header>
+          <dl>
+            <dt>목표</dt><dd>스펙의 완료 기준(코드 지표 + 테스트 + dev 문항)을 충족하는지 확인한다.</dd>
+            <dt>작업 방식</dt><dd><code>python -m eval.run</code>을 dev 문항으로 실행하고 T1 기준선과 같은 표에 나란히 놓는다. 실패 문항은 원인을 실행 기록에서 찾는다.</dd>
+            <dt>검증 방식</dt><dd>
+              <ul>
+                <li>코스 규칙 위반 0건 유지</li>
+                <li>동선 총거리·메뉴 중복·요청 반영 지표가 기준선보다 나아짐</li>
+                <li>전체 <code>pytest</code> 통과</li>
+                <li>holdout은 실행하지 않음</li>
+              </ul></dd>
+          </dl>
+        </article>
+      </div>
+      <p class="rules">※ T2·T3·T4는 서로 다른 파일 위주라 병렬 가능하지만, 같은 <b>validate.py</b>와 <b>course.py</b>를 만지는 부분은 한 번에 하나씩 합칩니다.</p>
+    </section>
+  </div>
+</main>
+
+<script>
+  // 화살표: 선행 작업 카드의 아래 중앙에서 뒤 작업 카드의 위 중앙으로 곡선을 그린다.
+  const EDGES = [["T1","T2"],["T1","T3"],["T1","T4"],["T2","T5"],["T3","T5"],["T4","T5"],["T5","T6"]];
+  function draw() {
+    const board = document.getElementById("board"), svg = document.getElementById("wires");
+    const b = board.getBoundingClientRect();
+    const color = getComputedStyle(document.documentElement).getPropertyValue("--arrow").trim();
+    let html = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${color}"/></marker></defs>`;
+    for (const [from, to] of EDGES) {
+      const f = document.getElementById(from).getBoundingClientRect(), t = document.getElementById(to).getBoundingClientRect();
+      const x1 = f.left + f.width / 2 - b.left, y1 = f.bottom - b.top;
+      const x2 = t.left + t.width / 2 - b.left, y2 = t.top - b.top;
+      const m = (y1 + y2) / 2;
+      html += `<path d="M${x1} ${y1} C${x1} ${m} ${x2} ${m} ${x2} ${y2 - 2}" fill="none" stroke="${color}" stroke-width="2" marker-end="url(#ah)"/>`;
+    }
+    svg.innerHTML = html;
+  }
+  window.addEventListener("load", draw);
+  window.addEventListener("resize", draw);
+</script>
+</body>
+</html>

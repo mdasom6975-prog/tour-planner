@@ -8,6 +8,7 @@ from datetime import date as _date
 import config
 from harness.logs import get_logger
 from ingest.clean import _text, detail_fields
+from tools.conditions import boost_results, extra_fields
 
 log = get_logger("tools.places")
 
@@ -15,12 +16,19 @@ FIELDS = ("id", "title", "type", "region", "addr", "lat", "lon", "modified", "is
 
 
 def search_places(query: str, region: str | None = None, types: list | None = None, k: int | None = None, *,
-                  retriever, today: str | None = None, trace=None, area: str | None = None) -> dict:
-    """성공: {"ok": True, "results": [...], "count", "top_score", "took_ms"} / 실패: {"ok": False, "reason"}"""
+                  retriever, today: str | None = None, trace=None, area: str | None = None, prefer: dict | None = None) -> dict:
+    """성공: {"ok": True, "results": [...], "count", "top_score", "took_ms"} / 실패: {"ok": False, "reason"}
+
+    prefer={"access": bool, "pet": bool} 에서 True 인 조건이 긍정으로 저장된 장소를 순위에서 앞으로 올린다(거르지 않는다). 비우면 예전과 똑같이 동작한다."""
     # 왜: 검색기는 준비에 14초 · 모델 2GB 라 한 번 만들어 나눠 쓴다. 도구가 직접 만들지 않고 받아 쓰면 테스트에서 가짜로 바꿀 수 있다. 어디: 인자 retriever · today.
     # 교안: 3일차 Part2 도구 5조건 · 4일차 PRD "외부 의존 주입". day3_tools.py 의 도구가 실패를 dict 로 돌려주던 모양.
+    wants = prefer or {}
+    boost = bool(wants.get("access") or wants.get("pet"))
+    # 왜: 가중은 "이미 찾은 후보 풀 안에서 순서만" 바꾼다. k 곳만 받아서는 풀 밖의 장소를 올릴 수 없어, 가중할 때는 풀(재정렬 후보 수)만큼 받아 순서를 바꾼 뒤 k 곳으로 자른다. 어디: 검색기 호출 직전 · 직후.
+    # 교안: 직접 대응 없음(2026-11-19 T3). 요청에 낱말이 없으면(boost=False) 이 줄들은 아무것도 바꾸지 않는다.
+    want_k = (k or config.RERANK_K) if boost else k
     try:
-        found = retriever.search(query, k=k, region=region, types=types, today=today, trace=trace, area=area)
+        found = retriever.search(query, k=max(want_k, config.REQUEST_BOOST_POOL) if boost else k, region=region, types=types, today=today, trace=trace, area=area)
     except Exception as e:   # 검색기 안에서 예상 못 한 오류가 나도 그래프가 멈추지 않게 한다
         log.exception("검색 중 오류 region=%s types=%s", region, types)
         return {"ok": False, "reason": f"검색 중 오류: {type(e).__name__}"}
@@ -31,7 +39,8 @@ def search_places(query: str, region: str | None = None, types: list | None = No
     # 교안: PRD 8번 "LLM 은 받은 장소 정보를 옮겨 적기만" — 여기서 준 칸만 뒤 단계의 재료가 된다. 결과 0건은 실패가 아니라 빈 목록이다.
     by_id = {p["id"]: p for p in retriever.places}
     results = []
-    for r in found["results"]:
+    ranked = boost_results(found["results"], by_id, wants)[:want_k] if boost else found["results"]
+    for r in ranked:
         p = by_id.get(r["id"])
         if p is None:   # 검색기와 장소 목록이 어긋난 경우. 지어내지 않고 뺀다.
             continue
@@ -41,6 +50,7 @@ def search_places(query: str, region: str | None = None, types: list | None = No
         # 무장애 · 반려동물은 실시간 재확인 도구가 받지 않는 정보라 여기서 저장분을 그대로 넘긴다. 없으면 빈 dict.
         item["access"] = p.get("access") or {}
         item["pet"] = p.get("pet") or {}
+        item.update(extra_fields(p))   # 후보 줄에 옮길 대표메뉴(menu) · 반려동물 표기(pet_flag) · 이용시간 원문(hours). 값이 있을 때만 넣는다
         results.append(item)
     return {"ok": True, "results": results, "count": len(results),
             "top_score": results[0]["score"] if results else None, "took_ms": found.get("took_ms")}

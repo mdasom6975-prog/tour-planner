@@ -10,8 +10,9 @@ import time
 from unittest.mock import patch
 
 from graph.context import trip_dates
+from graph.menu import place_menu_keywords
 from graph.state import normalize_course_ids, preserve_unchanged_reasons, slots_for
-from graph.validate import _legs, find_violations, validate_update
+from graph.validate import _legs, find_violations, hours_of, validate_update
 from harness.trace import Trace
 
 
@@ -54,8 +55,12 @@ def replay_case(fixture):
     dates = trip_dates(req["start_date"], req["days"])
     # 왜: 노드가 반환한 위반만 보면 삭제 후 빈 칸을 놓칠 수 있다. 어디: 최종 결과의 독립 재검사.
     # 교안: 설계 원칙 "숫자와 사실 판정은 코드가".
+    edit = state.get("mode") == "edit"
+    stored = fixture.get("stored", {})
+    menus = None if edit else {cid: kw for cid in candidates if (kw := place_menu_keywords(stored.get(cid)))}
+    hours = None if edit else hours_of(candidates, stored, update["rechecked"])
     actual = find_violations(final, candidates, dates, update["rechecked"], req.get("region"),
-                             slots_for(req, list(candidates.values())), req.get("exclusions"))
+                             slots_for(req, list(candidates.values())), req.get("exclusions"), menus, hours)
     errors = ["external_access_attempt"] if attempts else []
     slots = [s for d in final["days"] for s in d["slots"]]
     if len(slots) != expected["slots"]:

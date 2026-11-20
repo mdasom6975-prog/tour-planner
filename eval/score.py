@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import config
+from eval.quality import course_quality
 from tools.rest import rest_on
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -128,6 +129,38 @@ def expect_failures(row: dict, places: dict) -> list:
     return bad
 
 
+def _avg(values: list):
+    values = [v for v in values if v is not None]
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def quality_summary(qs: list) -> dict:
+    """코스별 품질 지표의 합계 · 평균. 합격선은 없다(기준선 기록)."""
+    asked = {k: [q["request"][k]["ratio"] for q in qs if q["request"].get(k) and q["request"][k]["ratio"] is not None] for k in ("access", "pet")}
+    pos = {k: [q["positive"][k]["ratio"] for q in qs if (q.get("positive") or {}).get(k) and q["positive"][k]["ratio"] is not None] for k in ("access", "pet")}
+    paired = [q for q in qs if q["route"]["gain_km"] is not None]
+    return {"courses": len(qs),
+            "km_after_total": round(sum(q["route"]["after_km"] for q in qs if q["route"]["after_km"] is not None), 2),
+            # 왜: 전 · 후 합계를 서로 다른 코스 집합으로 비교하면 줄어든 양이 틀려 보인다. 전 · 후가 모두 있는 코스(gain_km 가 있는 코스)에서만 합친다. 어디: 동선 요약.
+            # 교안: 직접 대응 없음.
+            "km_paired": len(paired), "km_paired_before": round(sum(q["route"]["before_km"] for q in paired), 2),
+            "km_paired_after": round(sum(q["route"]["after_km"] for q in paired), 2), "km_paired_gain": round(sum(q["route"]["gain_km"] for q in paired), 2),
+            "km_after_avg": _avg([q["route"]["after_km"] for q in qs]),
+            "slots_per_day_avg": _avg([n for q in qs for n in q["shape"]["slots_per_day"]]),
+            "hours_slots": sum(q["shape"]["slots"] for q in qs), "hours_known": sum(q["shape"]["with_hours"] for q in qs),
+            # 왜: 칸 시간대와 이용시간이 충돌하는 칸 수(T4). 예전 기록의 quality 에는 hours 칸이 없을 수 있어 .get 으로 읽는다. 어디: 하루 시간 배분 요약.
+            # 교안: 직접 대응 없음. 합격선 없음.
+            "hours_judged": sum(q["hours"]["judged"] for q in qs if q.get("hours")), "hours_closed": sum(q["hours"]["closed"] for q in qs if q.get("hours")),
+            "hours_unknown": sum(q["hours"]["unknown"] for q in qs if q.get("hours")), "hours_courses_with_closed": sum(1 for q in qs if (q.get("hours") or {}).get("closed")),
+            "menu_pairs": sum(q["menu"]["pairs"] for q in qs), "menu_places": sum(q["menu"]["places"] for q in qs),
+            "menu_courses_with_dup": sum(1 for q in qs if q["menu"]["pairs"]),
+            "access_asked": len(asked["access"]), "access_ratio_avg": _avg(asked["access"]),
+            "pet_asked": len(asked["pet"]), "pet_ratio_avg": _avg(asked["pet"]),
+            # 왜: 위 두 비율은 "정보 유무"라 반려동물 '불가' 표기도 센다. 긍정(휠체어 접근 가능 · 반려 가능)만의 비율을 따로 낸다(2026-11-19 T3). 어디: 요청 반영 요약.
+            # 교안: 직접 대응 없음. 예전 기록에는 positive 칸이 없어 .get 으로 읽는다(결과표는 모델 호출 없이 다시 만들 수 있다).
+            "access_positive_avg": _avg(pos["access"]), "pet_positive_avg": _avg(pos["pet"])}
+
+
 def score_rows(rows: list, places: dict) -> dict:
     """문항별 채점과 합계. 코스 규칙 위반의 합격선은 0건, 속도는 config.EVAL_MAX_SEC 초 이내."""
     items, by_rule, steps = [], {r: 0 for r in RULES}, {}
@@ -144,6 +177,7 @@ def score_rows(rows: list, places: dict) -> dict:
         items.append({"id": row["id"], "case": row["case"], "kind": last.get("kind"), "expect_ok": not failures, "failures": failures,
                       "violations": violations, "left_by_validator": last.get("violations", []), "removed": last.get("removed", 0),
                       "took_sec": row["took_sec"], "slow": row["took_sec"] > config.EVAL_MAX_SEC,
+                      "quality": course_quality(row["turns"], places),   # 코스가 아니면 None. 합격선 없는 기준선 지표(eval/quality.py)
                       "llm_calls": sum(t["llm_calls"] for t in row["turns"]),
                       "tokens": sum(t["input_tokens"] + t["output_tokens"] for t in row["turns"])})
     courses = [i for i in items if i["kind"] == "course"]
@@ -159,6 +193,7 @@ def score_rows(rows: list, places: dict) -> dict:
             "course_sec_avg": round(sum(i["took_sec"] for i in courses) / len(courses), 1) if courses else None,
             "course_sec_max": max((i["took_sec"] for i in courses), default=None),
             "tokens": sum(i["tokens"] for i in items),
+            "quality": quality_summary([i["quality"] for i in courses if i.get("quality")]),
             "step_ms_avg": {k: round(sum(v) / len(v)) for k, v in sorted(steps.items(), key=lambda kv: -sum(kv[1]) / len(kv[1]))}}
 
 
@@ -178,6 +213,27 @@ def to_markdown(run: str, provider: str, model: str, meta: dict, s: dict) -> str
     for i in s["items"]:
         rules = ", ".join(f'{v["rule"]}({v["where"]})' for v in i["violations"]) or "—"
         lines.append(f"| {i['id']} | {i['case']} | {i['kind']} | {'통과' if i['expect_ok'] else '실패'} | {rules} | {i['took_sec']} | {i['llm_calls']} | {i['tokens']:,} | {'; '.join(i['failures']) or '—'} |")
+
+    q = s.get("quality") or {}
+    if q.get("courses"):
+        lines += ["", "## 코스 품질 지표 (기준선 · 합격선 없음)", "",
+                  f"- 동선 직선거리: 코스 {q['courses']}건 합계 {q['km_after_total']}km (평균 {q['km_after_avg']}km)",
+                  f"- 재배열 전 · 후 (전 · 후가 모두 있는 코스 {q['km_paired']}건만): 전 {q['km_paired_before']}km → 후 {q['km_paired_after']}km, 줄어든 합 {q['km_paired_gain']}km",
+                  f"- 하루 칸 수 평균 {q['slots_per_day_avg']} · 이용시간 정보가 있는 칸 {q['hours_known']}/{q['hours_slots']}",
+                  f"- 칸 시간대 충돌(칸 대표 시각에 문을 닫는 칸): 시간 판정이 가능한 칸 {q.get('hours_judged')}곳 중 {q.get('hours_closed')}곳 · 판정 불가 {q.get('hours_unknown')}곳 (충돌이 있는 코스 {q.get('hours_courses_with_closed')}/{q['courses']}건)",
+                  f"- 식당 메뉴 겹침: {q['menu_pairs']}쌍 · {q['menu_places']}곳 (겹친 코스 {q['menu_courses_with_dup']}/{q['courses']}건)",
+                  f"- 요청 반영(정보 유무 — 반려동물 '불가 · 없음' 표기도 정보 있음으로 셈): 무장애 요청 {q['access_asked']}건 정보 있는 장소 비율 평균 {q['access_ratio_avg']} · 반려동물 요청 {q['pet_asked']}건 정보 있는 장소 비율 평균 {q['pet_ratio_avg']}",
+                  f"- 요청 반영(긍정만 — 휠체어 접근 가능 · 반려동물 가능): 무장애 장소 비율 평균 {q.get('access_positive_avg')} · 반려동물 장소 비율 평균 {q.get('pet_positive_avg')}", "",
+                  "| 문항 | 동선 전(km) | 동선 후(km) | 하루 칸 수 | 이용시간 있는 칸 | 시간 충돌 칸 / 판정 가능 / 판정 불가 | 메뉴 겹침 쌍 · 장소 | 무장애 정보 있음 | 반려동물 정보 있음 | 휠체어 접근 가능 | 반려동물 가능 |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        ratio = lambda r: "해당 없음" if r is None else f"{r['with_info']}/{r['places']}"
+        hrs = lambda h: "—" if not h else f"{h['closed']} / {h['judged']} / {h['unknown']}"
+        good = lambda r: "해당 없음" if r is None else f"{r['positive']}/{r['places']}"
+        for i in s["items"]:
+            if i.get("quality"):
+                c = i["quality"]
+                lines.append(f"| {i['id']} | {c['route']['before_km'] if c['route']['before_km'] is not None else '—'} | {c['route']['after_km'] if c['route']['after_km'] is not None else '—'} | "
+                             f"{'·'.join(map(str, c['shape']['slots_per_day']))} | {c['shape']['with_hours']}/{c['shape']['slots']} | {hrs(c.get('hours'))} | {c['menu']['pairs']}쌍 · {c['menu']['places']}곳 | "
+                             f"{ratio(c['request']['access'])} | {ratio(c['request']['pet'])} | {good((c.get('positive') or {}).get('access'))} | {good((c.get('positive') or {}).get('pet'))} |")
     return "\n".join(lines) + "\n"
 
 

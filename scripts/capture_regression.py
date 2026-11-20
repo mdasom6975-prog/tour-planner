@@ -12,7 +12,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from graph.state import slots_for
 
 STATE_KEYS = ("course", "candidates", "request", "rechecked", "rest_table", "retries", "mode", "rewrite_reasons")
-REST_KEYS = ("rest_status", "rest_weekdays", "rest_nth", "rest_note", "fetched")
+REST_KEYS = ("rest_status", "rest_weekdays", "rest_nth", "rest_note", "fetched", "hours_text")
 
 
 def capture(db, thread, suite, name, stored_path, known_issues=(), editable=(), mode=None):
@@ -42,6 +42,7 @@ def capture(db, thread, suite, name, stored_path, known_issues=(), editable=(), 
             row = json.loads(line)
             if row["id"] in ids:
                 stored[row["id"]] = {key: row.get(key) for key in REST_KEYS}
+                stored[row["id"]]["extra"] = {"menu_main": (row.get("extra") or {}).get("menu_main")}
     expected = {"slots": state["request"]["days"] * len(slots_for(state["request"], state["candidates"])),
                 "known_issues": [{"rule": parts[0], "date": parts[1], "slot": parts[2] if len(parts) > 2 else None,
                                   "id": parts[3] if len(parts) > 3 else None} for parts in known_issues]}

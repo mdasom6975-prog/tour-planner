@@ -85,7 +85,7 @@ def run_item(item: dict, retriever, llm=None, provider: str | None = None) -> di
             "festivals": [{"id": f["id"], "title": f["title"], "event_start": f["event_start"], "event_end": f["event_end"]}
                           for f in (out.get("festivals") or {}).get("items", [])],
             "violations": [{"rule": v.get("rule"), "date": v.get("date"), "slot": v.get("slot")} for v in out.get("violations", [])],
-            "removed": len(out.get("removed", [])), "retries": out.get("retries", {}), "grade": out.get("grade", {}),
+            "removed": len(out.get("removed", [])), "leg_km": out.get("leg_km", []), "retries": out.get("retries", {}), "grade": out.get("grade", {}),
             "steps": [{"step": s["step"], "kind": s["kind"], "ok": s["ok"], "took_ms": s["took_ms"]} for s in steps],
             "llm_calls": len(usage) - tokens_before,
             "input_tokens": sum(u["input_tokens"] for u in usage[tokens_before:]),

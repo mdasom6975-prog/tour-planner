@@ -145,11 +145,17 @@ ZONE_NAMES = "ABCDEF"
 REPLACED_REASON = "장소 유형 · 거리 · 휴무 등의 규칙에 맞는 후보로 바꿨습니다."   # 코드가 바꿔 넣은 칸의 이유 문장
 # 왜: 서울 3일에서 초안 2는 중복 1건뿐이었는데 다시 쓰다가 휴무 2건 · 거리 초과로 나빠졌다(2026-11-19 추적). 칸 하나의 위반은 모델에게 다시 쓰게 하기 전에 코드가 규칙에 맞는 가까운 후보로 바꾼다. 어디: graph/validate.py repair_slots.
 # 교안: 설계 원칙 "판정은 코드가". 2026-11-19 사용자 결정. REPAIR_MAX_SLOTS 곳을 넘게 어긋난 초안은 예전처럼 다시 쓰게 하고, 재작성을 다 쓴 뒤에는 개수와 상관없이 바꿔 본다.
-REPAIR_RULES = ("distance", "duplicate", "closed", "withdrawn", "excluded", "museum_limit", "slot_type", "cafe_meal", "cafe_slot")
+# 왜: 한 코스에 같은 대표메뉴 식당이 겹치면(menu_duplicate, 2026-11-19 T2) 코드가 가까운 다른 식당으로 바꾼다. 어디: graph/validate.py.
+# 교안: 직접 대응 없음. SOFT_RULES 는 쏠림 · 메뉴 겹침처럼 "규칙 위반이 아닌 품질 문제"라 재작성을 다 써도 칸을 빼지 않는 규칙이다.
+# 왜: 칸 시간대에 문을 닫는 장소(hours_closed, 2026-11-19 T4)도 코드가 가까운 다른 후보로 바꾼다. 다만 이용시간 문장을 정규식으로 읽은 값이고 칸 시각도 대표값이라, 재작성을 다 써도 못 고쳤다고 칸을 비우면 칸이 없어지는 쪽이 더 나쁘다. 그래서 SOFT_RULES 에 둔다. 어디: graph/validate.py.
+# 교안: 직접 대응 없음. 규칙 위반 합격선(없는 장소 · 거리 · 휴무 · 기간 밖 축제)에는 들어가지 않는 품질 규칙이다.
+REPAIR_RULES = ("distance", "duplicate", "closed", "withdrawn", "excluded", "museum_limit", "slot_type", "cafe_meal", "cafe_slot", "menu_duplicate", "hours_closed")
+SOFT_RULES = ("theme_repeat", "menu_duplicate", "hours_closed")
 REPAIR_MAX_SLOTS = 2
 DAY_REPAIR_BEAM_WIDTH = 24   # 변경 칸 수별로 남기는 하루 동선 후보 수. 유한 탐색이며 해의 존재를 보장하지 않는다
 REPAIR_WHY = {"distance": "이동 거리가 멀어", "duplicate": "같은 장소가 겹쳐", "closed": "휴무일이 겹쳐", "withdrawn": "관광공사 목록에서 내려가",
-              "excluded": "제외 조건에 걸려", "museum_limit": "박물관 수 제한 때문에",
+              "excluded": "제외 조건에 걸려", "museum_limit": "박물관 수 제한 때문에", "menu_duplicate": "앞 식당과 대표메뉴가 겹쳐",
+              "hours_closed": "그 시간대에 문을 닫아",
               "slot_type": "일정 칸에 맞지 않는 장소 유형이라", "cafe_meal": "식사 칸에 카페가 들어가", "cafe_slot": "카페 칸에 다른 유형이 들어가", "day_distance": "하루 이동 거리가 길어"}
 # 왜: 일수가 길수록 코스 · 날씨 조회 · 실시간 재확인(하루 40건)이 늘어 한도를 먼저 정한다. 어디: parse_request 의 일수 검사.
 # 교안: 직접 대응 없음. 3일은 임의로 정한 값(2026-11-13)이라 시연 · 평가에서 부족하면 바꾸고 비교표에 적는다.
@@ -180,6 +186,9 @@ SIGHT_SLOTS = ("오전", "오후", LATE_SLOT)   # 가볼 곳 칸. 나머지(점�
 CAFE_SLOT = "카페"
 CAFE_WORDS = ("커피", "카페", "디저트", "베이커리", "빵", "찻집")
 COURSE_SLOTS_WITH_CAFE = ["오전", "점심", CAFE_SLOT, "오후", LATE_SLOT, "저녁"]
+# 왜: 칸의 시간대와 장소의 이용시간이 맞는지 코드가 판정하려면 칸마다 대표 시각이 필요하다(2026-11-19 T4). 시각은 분 단위로 적는다(600 = 10:00). 어디: graph/validate.py hours_closed · eval/quality.py hours_fit.
+# 교안: 직접 대응 없음. 값은 사본(2026-11-16)의 이용시간으로 정했다: 오전 칸을 09:00 로 두면 관광지의 23% 가 개장 전이라 판정되고 10:00 이면 3% 다(10:30 2%, 11:00 1%). 점심 12:30 · 저녁 18:30 은 식당 4% · 11% 가 그 시각에 쉰다. 체류 여유(시각 + 머무는 시간)는 두지 않고 "그 시각에 열려 있는가"만 본다.
+SLOT_MINUTES = {"오전": 10 * 60, "점심": 12 * 60 + 30, CAFE_SLOT: 14 * 60, "오후": 14 * 60 + 30, LATE_SLOT: 16 * 60 + 30, "저녁": 18 * 60 + 30}
 # 왜: "11월 10일"을 모델이 1년 뒤로 읽어도 코스는 짜되, 읽은 날짜와 먼 날짜라는 점을 알린다(2026-11-16 결정, dev b05). 어디: graph/parse.py · graph/course.py.
 # 교안: 직접 대응 없음. 90일은 임의 값.
 MAX_AHEAD_DAYS = 90
@@ -298,3 +307,37 @@ REGION_THEMES = {
 # 교안: 직접 대응 없음(2026-11-13 요청). 한 요청에서 새로 찾는 취향 · 이름 수와 취향마다 더하는 후보 수의 상한.
 ADD_MAX_TERMS = 3
 ADD_K = 5
+
+# 왜: 코스 품질 지표(2026-11-19 T1)에서 요청 문장에 이 낱말이 있을 때만 "조건 정보가 있는 장소 비율"을 잰다. 합격선이 아니라 현재 값 기록용이다. 어디: eval/quality.py.
+# 교안: 직접 대응 없음. 낱말 목록은 초안이며, 낱말이 없으면 해당 없음(None)으로 둔다.
+ACCESS_REQUEST_WORDS = ("휠체어", "무장애", "유모차", "거동", "장애")
+PET_REQUEST_WORDS = ("반려", "강아지", "애견", "멍멍이", "펫")
+# 왜: "장애"가 "장애물"에, "펫"이 "카펫"에 걸려 조건을 말하지 않은 요청을 조건 요청으로 셌다(T1 크리틱 · 2026-11-19 T3). 위 낱말을 찾기 전에 이 낱말들을 지운다. 어디: tools/conditions.py request_wants (요청 반영 지표 · 검색 가중이 같이 쓴다).
+# 교안: 직접 대응 없음. 새 오탐이 나오면 여기에 한 낱말씩 더한다.
+REQUEST_FALSE_HITS = ("장애물", "카펫")
+# 왜: 관광공사 무장애 원문은 "휠체어 접근 가능함"이 표준 문구인데(저장 1,928곳 중 1,074곳) 예전 판정은 "휠체어 접근이 가능"만 찾아 41곳만 가능으로 읽었다(2026-11-19 T3 실제 데이터 확인). 반대로 "휠체어 접근 어려움 · 불가"가 한 군데라도 있으면 가능으로 단정하지 않는다. 어디: tools/conditions.py wheelchair_ok (후보 줄 · 가중 · 평가 지표가 같이 쓴다. 화면 카드 graph/course.py access_text 는 예전 판정 그대로).
+# 교안: 직접 대응 없음. 한계: "휠체어 출입 가능" · "휠체어 사용자 이용 쉬움" 같은 다른 문구는 가능으로 세지 않는다(보수적).
+ACCESS_POSITIVE_PATTERN = r"휠체어\s*접근\s*(?:이\s*)?가능"
+ACCESS_NEGATIVE_PATTERN = r"휠체어[^,.;_]{0,12}(?:불가|어려)"
+# 왜: 요청에 무장애 · 반려동물 낱말이 있어도 검색은 의미 유사도만 봐서, 조건이 긍정으로 저장된 장소가 후보 15곳 밖에 남았다. 해당 장소를 이 칸 수만큼 앞으로 올린다(거르지 않는다 — PRD 4번). 어디: tools/places.py search_places 의 k 자르기 직전.
+# 교안: 직접 대응 없음(2026-11-19 T3). 후보 풀은 재정렬 후보 수(RERANK_CANDIDATES)까지다. 값은 임의로 정했고 dev 에는 해당 문항이 없어 효과는 실제 데이터 전 · 후 비교로만 봤다.
+REQUEST_BOOST_RANKS = 8
+REQUEST_BOOST_POOL = RERANK_CANDIDATES   # 가중할 때 검색기에서 받아 순서를 바꾸는 후보 수
+# 왜: 후보 줄이 길어지면 코스 작성 입력 토큰이 늘어 무장애 · 메뉴 문구는 앞부분만 옮긴다. 어디: tools/conditions.py access_brief · menu_label (코스 작성 후보 줄).
+# 교안: 직접 대응 없음. 항목 우선순위는 이동 · 동행(아이 · 부모님)에 쓸모가 큰 순서다.
+CAND_ACCESS_KEYS = ("휠체어", "접근로", "엘리베이터", "유아차", "수유실")
+CAND_ACCESS_MAX_ITEMS = 3
+CAND_ACCESS_ITEM_CHARS = 30
+CAND_ACCESS_CHARS = 110
+CAND_MENU_CHARS = 30
+# 왜: 대표메뉴 키워드를 가를 때 "세트 · 정식"처럼 어느 식당에나 붙는 말은 메뉴 겹침으로 세지 않는다. 어디: graph/menu.py (T2 검증도 같은 함수를 쓴다).
+# 교안: 직접 대응 없음. 정규화 규칙 초안: 구분자(, / · 줄바꿈 공백 괄호)로 나누고 소문자로 바꾸며 MENU_KEYWORD_MIN_LEN 글자 미만과 아래 낱말은 버린다.
+MENU_KEYWORD_MIN_LEN = 2
+MENU_STOPWORDS = ("세트", "정식", "메뉴", "기본", "기본상", "스페셜", "프리미엄", "특선", "모둠", "대표")
+
+# 왜: 칸의 대표 시각에 문을 여는 곳을 처음부터 고르게 하려고 후보 줄에 이용시간을 싣는다(2026-11-19 T5). 원문은 길 수 있어(최대 300자) 코드가 읽은 값(예: 11:00~20:00) 또는 원문 앞부분만 이 길이까지 옮긴다. 어디: tools/conditions.py hours_label (코스 작성 · 수정 후보 줄).
+# 교안: PRD 8번 "LLM 은 받은 장소 정보를 옮겨 적기만". 값을 새로 만들지 않고, 이용시간 정보가 없으면 칸 자체를 넣지 않는다.
+CAND_HOURS_CHARS = 60
+# 왜: 판정 지시문(grade_documents)이 후보 줄에서 무장애 · 반려동물을 보지 못해 "휠체어 · 반려동물" 요청에 맞는 장소를 알아보지 못했다(T3 한계). 판정 줄에는 코스 작성 줄보다 짧게 옮긴다. 어디: graph/retrieval.py _view.
+# 교안: 직접 대응 없음(2026-11-19 T5). 판정은 정보가 없다는 이유만으로 탈락시키지 않는다.
+GRADE_COND_CHARS = 60

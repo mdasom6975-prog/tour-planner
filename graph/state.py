@@ -23,6 +23,7 @@ class State(TypedDict, total=False):
     rechecked: dict      # validate_course 가 관광공사에서 다시 받은 장소별 휴무 값 · 출처(live/stored) · 기준일
     removed: list       # 재작성을 다 쓰고도 남아 코스에서 뺀 위반 장소
     replaced: list      # 재작성을 다 쓰고도 거리 위반이 남아 코드가 가까운 후보로 바꿔 넣은 칸
+    leg_km: list         # validate_course 가 남긴 날별 이동 거리 [{date, before, after}] (재배열 전 · 후 직선 합 km, 평가가 읽는다)
     violations: list     # validate_course 가 찾은 규칙 위반 (6단계)
     retries: dict        # {"search": 검색 재시도 수, "draft": 코스를 쓴 횟수(최초 1회 + 재작성)}
     mode: str            # route 가 정한 이번 턴의 종류: new(새 요청) | edit(이미 나온 코스 고치기)

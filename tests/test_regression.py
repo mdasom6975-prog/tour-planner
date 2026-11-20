@@ -100,11 +100,13 @@ def test_capture_selects_prevalidation_checkpoint_and_does_not_overwrite(tmp_pat
             typ, blob = JsonPlusSerializer().dumps_typed({'channel_values': s})
             con.execute('insert into checkpoints values (?,?,?,?)', ('thread', str(index), typ, blob))
     stored = tmp_path/'stored.jsonl'
-    stored.write_text('\n'.join(json.dumps(c) for c in CANDS))
+    stored.write_text('\n'.join(json.dumps({**c, 'hours_text': '00:00~24:00', 'extra': {'menu_main': c['id']}}) for c in CANDS))
     suite = tmp_path/'suite'
     captured = capture(db, 'thread', suite, 'captured', stored)
     assert captured['state']['course']['days']
     assert 'trace' not in captured['state']
+    assert captured['stored']['s0']['hours_text'] == '00:00~24:00'
+    assert captured['stored']['s0']['extra'] == {'menu_main': 's0'}
     assert replay_case(captured)['status'] == 'PASS'
     with pytest.raises(ValueError, match='immutable'):
         capture(db, 'thread', suite, 'captured', stored)
@@ -143,3 +145,20 @@ def test_swallowed_network_attempt_still_fails_case(monkeypatch):
     monkeypatch.setattr(regression, 'validate_update', faulty)
     result = replay_case(fixture())
     assert result['status'] == 'FAIL' and 'external_access_attempt' in result['errors']
+
+
+@pytest.mark.parametrize('rule', ['hours_closed', 'menu_duplicate'])
+def test_independent_recheck_keeps_merged_quality_rules_when_node_misses_them(monkeypatch, rule):
+    f = fixture()
+    f['stored'] = {}
+    if rule == 'hours_closed':
+        f['stored']['f1'] = {'hours_text': '10:00~11:00'}
+    else:
+        f['stored']['f0'] = {'extra': {'menu_main': '물회'}}
+        f['stored']['f1'] = {'extra': {'menu_main': '물회'}}
+    def missed(*args, **kwargs):
+        return lambda state: {'course': state['course'], 'violations': [], 'rechecked': state['rechecked']}
+    monkeypatch.setattr('harness.regression.validate_update', missed)
+    result = replay_case(f)
+    assert result['status'] == 'FAIL'
+    assert rule in {v['rule'] for v in result['unexpected']}
